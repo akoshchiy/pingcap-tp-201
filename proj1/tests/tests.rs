@@ -1,6 +1,6 @@
 use assert_cmd::prelude::*;
-use proj1::kvs::KvStore;
 use predicates::str::contains;
+use proj1::kvs::KvStore;
 use std::process::Command;
 
 // `kvs` with no args should exit with a non-zero code.

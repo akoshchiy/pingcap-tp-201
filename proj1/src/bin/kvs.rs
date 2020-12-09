@@ -1,8 +1,6 @@
+use clap::{load_yaml, App};
 use std::env;
-use clap::{Arg, App, load_yaml};
-use std::fs::read_to_string;
 use std::process::exit;
-
 
 fn main() {
     let yaml = load_yaml!("cli.yml");
@@ -14,11 +12,18 @@ fn main() {
     }
 
     match matches.subcommand() {
-        Some(("get", args)) => { error_exit("unimplemented"); }
-        Some(("set", args)) => { error_exit("unimplemented"); }
-        Some(("rm", args)) => { error_exit("unimplemented"); }
-        Some((cmd, args)) => { error_exit(format!("{}{}", "unknown command: ", cmd).as_str()); }
-        _ => { unreachable!(); }
+        Some(("get", _args)) => {
+            error_exit("unimplemented");
+        }
+        Some(("set", _args)) => {
+            error_exit("unimplemented");
+        }
+        Some(("rm", _args)) => {
+            error_exit("unimplemented");
+        }
+        _ => {
+            unreachable!();
+        }
     }
 }
 
