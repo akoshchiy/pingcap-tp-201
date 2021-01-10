@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -15,13 +14,14 @@ pub struct KvStore {
 #[derive(Error, Debug)]
 pub enum KvError {
     #[error("file error: {file}")]
-    FileError { file: String, source: Error }
+    FileError { file: String, source: Error },
+    OtherError,
+    TError { source: Box<dyn std::error::Error> },
 }
 
 pub type Result<T> = std::result::Result<T, KvError>;
 
 impl KvStore {
-
     pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
         let buf = path.into();
         let buf_path = buf.as_path();

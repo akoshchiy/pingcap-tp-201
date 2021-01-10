@@ -13,7 +13,6 @@ impl WalIterator {
 
     pub(crate) fn next(&mut self) -> Entry {
         // self.file.read()
-
         unimplemented!("not yet")
     }
 }
