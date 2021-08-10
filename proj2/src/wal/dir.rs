@@ -12,9 +12,9 @@ use std::backtrace::Backtrace;
 use crate::wal::dir::FileId::{Append, Compact};
 use std::num::ParseIntError;
 
-const MAX_FILE_LEN: u64 = 10 * 1024 * 1024;
+const MAX_FILE_LEN: u64 = 1024 * 1024; // 1mb
 
-
+#[derive(Copy, Clone)]
 pub enum FileId {
     Append(u16),
     Compact(u16),
@@ -73,13 +73,13 @@ impl FileId {
 }
 
 pub struct WalDir {
-    dir_path: Path,
+    dir_path: PathBuf,
     read_files: HashMap<FileId, File>,
     append_file: (FileId, File),
 }
 
 impl WalDir {
-    pub fn open(path: Path) -> Result<WalDir> {
+    pub fn open(path: &Path) -> Result<WalDir> {
         let file_ids_res = WalDir::walk_dir(&path);
 
         if file_ids_res.is_err() {
@@ -107,7 +107,7 @@ impl WalDir {
         }
 
         Ok(WalDir {
-            dir_path: path,
+            dir_path: path.into(),
             read_files,
             append_file: (append_file_id, append_file_res.unwrap()),
         })
@@ -205,7 +205,7 @@ impl WalDir {
         if append_res.is_err() {
             return append_res;
         }
-        self.append_file = (idx, append_res.unwrap());
+        self.append_file = (file_id.clone(), append_res.unwrap());
 
         let read_res = self.open_file(false, &file_id);
         if read_res.is_err() {

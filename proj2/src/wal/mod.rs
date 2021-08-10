@@ -2,22 +2,20 @@ use std::path::PathBuf;
 use std::fs::File;
 use thiserror::Error as ThisError;
 
-
 use crate::kvs;
-use crate::wal::FileId::{Append, Compact};
 use crate::kvs::KvError;
 use std::collections::HashMap;
 use std::process::id;
+
+use walkdir;
 
 mod reader;
 mod appender;
 mod iterator;
 mod dir;
 
-pub use file::FileId;
 use std::num::ParseIntError;
 use std::backtrace::Backtrace;
-
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -47,7 +45,6 @@ pub enum Command {
     Set,
     Remove,
 }
-
 
 pub struct Entry {
     pub key: String,
