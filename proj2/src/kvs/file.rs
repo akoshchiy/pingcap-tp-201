@@ -1,5 +1,5 @@
-use std::path::PathBuf;
-use walkdir::WalkDir;
+use std::path::{PathBuf, Path};
+use walkdir::{WalkDir, DirEntry};
 
 use super::err::Result as Result;
 use crate::kvs::err::KvError::{WalkDirError, ParseFileIdError};
@@ -67,26 +67,33 @@ struct FileExtract {
     write_file: FileId,
 }
 
-fn extract_files(path: PathBuf) -> Result<FileExtract> {
-    let entries = WalkDir::new(path.as_path()).into_iter();
+fn extract_files(path: &Path) -> Result<FileExtract> {
+    let entries = WalkDir::new(path)
+        .into_iter();
 
     let mut file_ids = Vec::new();
 
-    for entry in entries {
-        if entry.is_err() {
+    for entry_res in entries {
+        if entry_res.is_err() {
             return Err(
                 WalkDirError {
-                    path: path.as_path().display().to_string()
+                    path: path.display().to_string()
                 }
             );
         }
-        let file_id_res = FileId::parse(
-            entry.unwrap().file_name().to_str().unwrap()
-        );
+        let entry = entry_res.unwrap();
+
+        let file_name = entry.file_name().to_str().unwrap();
+
+        if entry.file_type().is_dir() {
+            continue;
+        }
+
+        let file_id_res = FileId::parse(file_name);
         if file_id_res.is_err() {
             return Err(file_id_res.err().unwrap());
         }
-        file_ids.push(file_id_res.unwrap());
+        file_ids.push(file_id_res?);
     }
 
     let default_file = FileId::new(1, false);
@@ -98,6 +105,10 @@ fn extract_files(path: PathBuf) -> Result<FileExtract> {
         .unwrap_or(&default_file)
         .clone();
 
+    if file_ids.is_empty() {
+        file_ids.push(default_file);
+    }
+
     Ok(FileExtract {
         files: file_ids,
         write_file: last_file,
@@ -106,8 +117,9 @@ fn extract_files(path: PathBuf) -> Result<FileExtract> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kvs::file::FileId;
+    use crate::kvs::file::{FileId, extract_files};
     use std::fs::File;
+    use tempfile::{TempDir, NamedTempFile};
 
     #[test]
     fn test_file_id_parse() {
@@ -131,5 +143,61 @@ mod tests {
 
         let s2: String = FileId::new(10, true).into();
         assert_eq!("log_c_10".to_string(), s2);
+    }
+
+    #[test]
+    fn test_extract_empty_dir() {
+        let temp_dir = tempfile::Builder::new()
+            .prefix("temporary-dir")
+            .tempdir()
+            .unwrap();
+
+        let res = extract_files(temp_dir.path());
+
+        assert_eq!(res.is_ok(), true);
+
+        let file_extract = res.unwrap();
+        assert_eq!(file_extract.files.len(), 1);
+
+        assert_eq!(file_extract.files[0].compacted, false);
+        assert_eq!(file_extract.files[0].version, 1);
+
+        assert_eq!(file_extract.write_file.version, 1);
+        assert_eq!(file_extract.write_file.compacted, false);
+    }
+
+    #[test]
+    fn test_extract_dir() {
+        let dir = tempfile::Builder::new()
+            .prefix("temporary-dir")
+            .rand_bytes(5)
+            .tempdir()
+            .unwrap();
+
+        let file_path_a_1 = dir.path().join("log_a_1");
+        let file_path_c_1 = dir.path().join("log_c_1");
+        let file_path_a_2 = dir.path().join("log_a_2");
+
+        let file_a_1 = File::create(file_path_a_1).unwrap();
+        let file_c_1 = File::create(file_path_c_1).unwrap();
+        let file_a_2 = File::create(file_path_a_2).unwrap();
+
+        let res = extract_files(dir.path());
+        assert_eq!(res.is_ok(), true);
+
+        let file_extract = res.unwrap();
+        assert_eq!(file_extract.files.len(), 3);
+
+        assert_eq!(file_extract.files[0].compacted, false);
+        assert_eq!(file_extract.files[0].version, 1);
+
+        assert_eq!(file_extract.files[1].compacted, false);
+        assert_eq!(file_extract.files[1].version, 2);
+
+        assert_eq!(file_extract.files[2].compacted, true);
+        assert_eq!(file_extract.files[2].version, 1);
+
+        assert_eq!(file_extract.write_file.compacted, false);
+        assert_eq!(file_extract.write_file.version, 2);
     }
 }
