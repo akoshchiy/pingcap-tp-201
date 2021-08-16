@@ -1,7 +1,7 @@
 use clap::{load_yaml, App};
+use proj2::store::KvStore;
 use std::env;
 use std::process::exit;
-use proj2::store::KvStore;
 
 fn main() {
     let store = KvStore::open("sdad").unwrap();

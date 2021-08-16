@@ -1,7 +1,7 @@
 mod err;
 mod file;
-mod store;
 mod io;
+mod store;
 
 pub use err::Result;
 pub use store::KvStore;

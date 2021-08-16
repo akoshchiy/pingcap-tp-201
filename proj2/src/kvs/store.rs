@@ -1,6 +1,4 @@
-
-
-use super::err::Result as Result;
+use super::err::Result;
 use crate::kvs::file::FileId;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -54,8 +52,6 @@ impl KvStore {
         unimplemented!()
     }
 }
-
-
 
 // impl Default for KvStore {
 //     fn default() -> Self {

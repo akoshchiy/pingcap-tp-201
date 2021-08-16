@@ -1,8 +1,8 @@
-use std::path::{PathBuf, Path};
-use walkdir::{WalkDir, DirEntry};
+use std::path::{Path, PathBuf};
+use walkdir::{DirEntry, WalkDir};
 
-use super::err::Result as Result;
-use crate::kvs::err::KvError::{WalkDirError, ParseFileIdError};
+use super::err::Result;
+use crate::kvs::err::KvError::{ParseFileIdError, WalkDirError};
 use std::panic::panic_any;
 
 #[derive(Clone, Debug)]
@@ -20,7 +20,9 @@ impl FileId {
     }
 
     fn parse(path: &str) -> Result<FileId> {
-        let err = ParseFileIdError { path: path.to_string() };
+        let err = ParseFileIdError {
+            path: path.to_string(),
+        };
         let split: Vec<_> = path.split("_").collect();
         if split.len() != 3 {
             return Result::Err(err);
@@ -36,7 +38,7 @@ impl FileId {
                 version: id,
                 compacted,
             }),
-            Err(_) => Result::Err(err)
+            Err(_) => Result::Err(err),
         }
     }
 
@@ -62,24 +64,21 @@ impl From<FileId> for String {
     }
 }
 
-struct FileExtract {
-    files: Vec<FileId>,
-    write_file: FileId,
+pub(super) struct FileExtract {
+    pub files: Vec<FileId>,
+    pub write_file: FileId,
 }
 
-fn extract_files(path: &Path) -> Result<FileExtract> {
-    let entries = WalkDir::new(path)
-        .into_iter();
+pub(super) fn extract_files(path: &Path) -> Result<FileExtract> {
+    let entries = WalkDir::new(path).into_iter();
 
     let mut file_ids = Vec::new();
 
     for entry_res in entries {
         if entry_res.is_err() {
-            return Err(
-                WalkDirError {
-                    path: path.display().to_string()
-                }
-            );
+            return Err(WalkDirError {
+                path: path.display().to_string(),
+            });
         }
         let entry = entry_res.unwrap();
 
@@ -100,8 +99,8 @@ fn extract_files(path: &Path) -> Result<FileExtract> {
 
     let last_file = file_ids
         .iter()
-        .filter(|f| { !f.compacted })
-        .max_by(|a, b| { a.version.cmp(&b.version) })
+        .filter(|f| !f.compacted)
+        .max_by(|a, b| a.version.cmp(&b.version))
         .unwrap_or(&default_file)
         .clone();
 
@@ -117,9 +116,9 @@ fn extract_files(path: &Path) -> Result<FileExtract> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kvs::file::{FileId, extract_files};
+    use crate::kvs::file::{extract_files, FileId};
     use std::fs::File;
-    use tempfile::{TempDir, NamedTempFile};
+    use tempfile::{NamedTempFile, TempDir};
 
     #[test]
     fn test_file_id_parse() {
