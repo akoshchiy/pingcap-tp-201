@@ -4,24 +4,16 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum KvError {
     #[error("file error: {file}")]
-    FileError {
-        file: String,
-    },
+    FileError { file: String },
 
     #[error("parse file_id error: {path}")]
-    ParseFileIdError {
-        path: String,
-    },
+    ParseFileIdError { path: String },
 
     #[error("walk_dir error: {path}")]
-    WalkDirError {
-        path: String,
-    },
+    WalkDirError { path: String },
 
     #[error("io error")]
-    IoError {
-        source: std::io::Error,
-    },
+    IoError { source: std::io::Error },
 
     #[error("noop")]
     Noop,
