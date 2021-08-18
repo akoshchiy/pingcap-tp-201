@@ -1,15 +1,11 @@
-use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom, Write, IoSliceMut};
-
-use super::err;
 
 use super::err::Result;
-use crate::kvs::err::KvError;
 use crate::kvs::err::KvError::{IoError, Noop};
 use std::convert::TryInto;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+use std::io::{SeekFrom, BufReader, Seek, Read, Write, BufWriter};
 
 const FRAME_HEADER_SIZE: usize = 4;
 
@@ -20,15 +16,15 @@ pub(super) enum LogEntry {
     Remove { key: String },
 }
 
-pub(super) struct LogReader<R> {
-    reader: BufReader<R>,
-    pos: u32,
-}
-
 pub(super) struct LogFrame {
     entry: LogEntry,
     offset: u32,
     size: u32,
+}
+
+pub(super) struct LogReader<R> {
+    reader: BufReader<R>,
+    pos: u32,
 }
 
 impl<R: Read + Seek> LogReader<R> {
@@ -46,7 +42,10 @@ impl<R: Read + Seek> LogReader<R> {
     }
 
     pub(super) fn read_pos(&mut self, pos: u32) -> Result<LogFrame> {
-        self.reader.seek(SeekFrom::Start(pos as u64));
+        let seek_res = self.reader.seek(SeekFrom::Start(pos as u64));
+        if seek_res.is_err() {
+            return Err(Noop);
+        }
 
         let size = self.read_size()?;
         let mut vec: Vec<u8> = vec![0; size as usize];
@@ -84,12 +83,82 @@ impl<R: Read + Seek> LogReader<R> {
     }
 }
 
+pub(super) struct LogWriter<W: Write> {
+    writer: BufWriter<W>,
+}
+
+impl<W: Write> LogWriter<W> {
+    pub(super) fn new(writer: W) -> LogWriter<W> {
+        LogWriter {
+            writer: BufWriter::new(writer),
+        }
+    }
+
+    pub(super) fn write(&mut self, entry: &LogEntry) -> Result<()> {
+        let entry_buf = match bson::to_vec(entry) {
+            Ok(entry_buf) => entry_buf,
+            Err(err) => return Err(Noop),
+        };
+
+        let len = entry_buf.len() as u32;
+
+        if let Err(e) = self.write_size(len) {
+            return Err(Noop);
+        }
+
+        let write_res = self.writer.write(entry_buf.as_slice());
+        match write_res {
+            Ok(_) => (),
+            Err(e) => return Err(Noop),
+        }
+
+        match self.writer.flush() {
+            Ok(_) => Ok(()),
+            Err(e) => return Err(Noop),
+        }
+    }
+
+    fn write_size(&mut self, size: u32) -> Result<()> {
+        let mut buf: [u8; FRAME_HEADER_SIZE] = size.to_be_bytes();
+        let res = self.writer.write(&mut buf);
+        match res {
+            Ok(_) => Ok(()),
+            Err(e) => Err(Noop),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::kvs::io::{LogEntry, LogReader};
+    use crate::kvs::io::{LogEntry, LogReader, LogWriter};
     use std::borrow::Borrow;
-    use std::fs::{File, ReadDir};
-    use std::io::Cursor;
+    use std::io::{Cursor, Write, Read};
+
+    struct WriteBuffer {
+        buf: Vec<u8>,
+    }
+
+    impl Write for WriteBuffer {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            &self.buf.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl WriteBuffer {
+        fn new() -> WriteBuffer {
+            WriteBuffer { buf: Vec::new() }
+        }
+
+        fn buf(&self) -> &[u8] {
+            self.buf.as_slice()
+        }
+    }
+
 
     #[test]
     fn test_reader() {
@@ -103,13 +172,37 @@ mod tests {
         let mut reader = LogReader::new(Cursor::new(buf));
 
         let res = reader.read_next();
-        // assert_eq!(res.is_ok(), true);
 
         let frame = res.unwrap();
         assert_eq!(frame.offset, 0);
         assert_eq!(frame.size + 4, entry_size);
 
         if let LogEntry::Set { key, val } = frame.entry {
+            assert_eq!(key, "key1");
+            assert_eq!(val, "val");
+        } else {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn test_writer() {
+        let entry = LogEntry::Set {
+            key: "key1".to_string(),
+            val: "val".to_string(),
+        };
+
+        let mut write_buf = WriteBuffer::new();
+        {
+            let mut writer = LogWriter::new(&mut write_buf);
+            let res = writer.write(&entry);
+        }
+
+        let buf = write_buf.buf();
+
+        let result_entry = deserialize_entry(buf);
+
+        if let LogEntry::Set { key, val } = result_entry {
             assert_eq!(key, "key1");
             assert_eq!(val, "val");
         } else {
@@ -125,5 +218,19 @@ mod tests {
         buf.extend_from_slice(&size_bytes);
         buf.extend_from_slice(entry_bytes.as_slice());
         buf
+    }
+
+    fn deserialize_entry(buf: &[u8]) -> LogEntry {
+        let mut cursor = Cursor::new(buf);
+
+        let mut size_buf = [0u8; 4];
+        cursor.read_exact(&mut size_buf).unwrap();
+
+        let size = u32::from_be_bytes(size_buf);
+
+        let mut entry_buf = vec![0u8; size as usize];
+        cursor.read_exact(&mut entry_buf).unwrap();
+
+        bson::from_slice(entry_buf.as_slice()).unwrap()
     }
 }
