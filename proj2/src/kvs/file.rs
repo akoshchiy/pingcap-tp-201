@@ -7,8 +7,8 @@ use std::panic::panic_any;
 
 #[derive(Clone, Debug)]
 pub(super) struct FileId {
-    version: u32,
-    compacted: bool,
+    pub version: u32,
+    pub compacted: bool,
 }
 
 impl FileId {

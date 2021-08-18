@@ -22,7 +22,7 @@ pub(super) struct LogFrame {
     size: u32,
 }
 
-pub(super) struct LogReader<R> {
+pub(super) struct LogReader<R: Read + Seek> {
     reader: BufReader<R>,
     pos: u32,
 }
@@ -158,7 +158,6 @@ mod tests {
             self.buf.as_slice()
         }
     }
-
 
     #[test]
     fn test_reader() {
