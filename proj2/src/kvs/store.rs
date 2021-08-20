@@ -7,7 +7,6 @@ use std::path::{PathBuf, Path};
 use crate::kvs::err::KvError::Noop;
 use crate::kvs::io::{LogReader, LogWriter};
 use std::fs::{File, OpenOptions};
-use std::str::pattern::Pattern;
 
 pub struct KvStore {
     mem_table: HashMap<String, TableEntry>,
@@ -73,9 +72,9 @@ fn prepare_readers(files: &[FileId], path: &Path) -> Result<HashMap<u32, LogRead
     for file in files {
         match open_reader(file, path) {
             Ok(reader) => {
-                map.insert(file.version, reader);
+                map.insert(file.version(), reader);
             },
-            Err => return Err(Noop)
+            Err(_) => return Err(Noop)
         };
     }
     Ok(map)
@@ -83,24 +82,24 @@ fn prepare_readers(files: &[FileId], path: &Path) -> Result<HashMap<u32, LogRead
 
 fn open_reader(file_id: &FileId, root_path: &Path) -> Result<LogReader<File>> {
     let file_str: String = file_id.into();
-    let file_path = root_path.join(Path::new(&file_str)).as_path();
-    match File::open(file_path) {
+    let file_path = root_path.join(Path::new(&file_str));
+    match File::open(file_path.as_path()) {
         Ok(f) => Ok(LogReader::new(f)),
-        Err(e) => Noop
+        Err(e) => Err(Noop)
     }
 }
 
 fn open_writer(file_id: &FileId, root_path: &Path) -> Result<LogWriter<File>> {
     let file_str: String = file_id.into();
-    let file_path = root_path.join(Path::new(&file_str)).as_path();
+    let file_path = root_path.join(Path::new(&file_str));
 
     let file_res = OpenOptions::new()
         .write(true)
         .create(true)
-        .open(file_path);
+        .open(file_path.as_path());
 
     match file_res {
         Ok(f) => Ok(LogWriter::new(f)),
-        Err(e) => Noop
+        Err(e) => Err(Noop)
     }
 }

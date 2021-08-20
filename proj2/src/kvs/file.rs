@@ -5,62 +5,78 @@ use super::err::Result;
 use crate::kvs::err::KvError::{ParseFileIdError, WalkDirError};
 use std::panic::panic_any;
 
-#[derive(Clone, Debug)]
-pub(super) struct FileId {
-    pub version: u32,
-    pub compacted: bool,
+
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub(super) enum FileId {
+    Compact(u32),
+    Append(u32),
+    Temp(u32),
 }
 
 impl FileId {
-    fn new(ver: u32, compacted: bool) -> FileId {
-        FileId {
-            version: ver,
-            compacted,
-        }
-    }
-
-    fn parse(path: &str) -> Result<FileId> {
+    pub fn parse(path: &str) -> Result<FileId> {
         let err = ParseFileIdError {
             path: path.to_string(),
         };
         let split: Vec<_> = path.split("_").collect();
-        if split.len() != 3 {
-            return Result::Err(err);
-        }
-        if split[0] != "log" {
-            return Result::Err(err);
-        }
-        let compacted = split[1] == "c";
-        let ver = split[2].parse::<u32>();
 
-        match ver {
-            Ok(id) => Result::Ok(FileId {
-                version: id,
-                compacted,
-            }),
-            Err(_) => Result::Err(err),
+        if split.len() != 2 {
+            return Result::Err(err);
+        }
+
+        let ver = match split[1].parse::<u32>() {
+            Ok(v) => v,
+            Err(_) => return Err(err)
+        };
+
+        match split[0] {
+            "c" => Ok(FileId::Compact(ver)),
+            "a" => Ok(FileId::Append(ver)),
+            "t" => Ok(FileId::Temp(ver)),
+            _ => Err(err),
         }
     }
 
-    fn inc_version(&self) -> FileId {
-        FileId {
-            version: self.version + 1,
-            compacted: self.compacted,
+    pub fn is_append(&self) -> bool {
+        match self {
+            FileId::Append(_) => true,
+            _ => false,
         }
     }
 
-    fn as_compacted(&self) -> FileId {
-        FileId {
-            version: self.version,
-            compacted: true,
+    pub fn is_compacted(&self) -> bool {
+        match self {
+            FileId::Compact(_) => true,
+            _ => false,
         }
+    }
+
+    pub fn version(&self) -> u32 {
+        match self {
+            FileId::Append(v) => *v,
+            FileId::Compact(v) => *v,
+            FileId::Temp(v) => *v,
+        }
+    }
+
+    fn to_string(&self) -> String {
+        match self {
+            FileId::Append(v) => format!("a_{}", v),
+            FileId::Compact(v) => format!("c_{}", v),
+            FileId::Temp(v) => format!("t_{}", v),
+        }
+    }
+}
+
+impl From<&FileId> for String {
+    fn from(file_id: &FileId) -> Self {
+        file_id.to_string()
     }
 }
 
 impl From<FileId> for String {
     fn from(file_id: FileId) -> Self {
-        let c = if file_id.compacted { "c" } else { "a" };
-        format!("log_{}_{}", c, file_id.version)
+        file_id.to_string()
     }
 }
 
@@ -75,12 +91,12 @@ pub(super) fn extract_files(path: &Path) -> Result<FileExtract> {
     let mut file_ids = Vec::new();
 
     for entry_res in entries {
-        if entry_res.is_err() {
-            return Err(WalkDirError {
+        let entry = match entry_res {
+            Ok(entry) => entry,
+            Err(_) => return Err(WalkDirError {
                 path: path.display().to_string(),
-            });
-        }
-        let entry = entry_res.unwrap();
+            }),
+        };
 
         let file_name = entry.file_name().to_str().unwrap();
 
@@ -88,19 +104,20 @@ pub(super) fn extract_files(path: &Path) -> Result<FileExtract> {
             continue;
         }
 
-        let file_id_res = FileId::parse(file_name);
-        if file_id_res.is_err() {
-            return Err(file_id_res.err().unwrap());
-        }
-        file_ids.push(file_id_res?);
+        let file_id = match FileId::parse(file_name) {
+            Ok(file_id) => file_id,
+            Err(e) => return Err(e),
+        };
+
+        file_ids.push(file_id);
     }
 
-    let default_file = FileId::new(1, false);
+    let default_file = FileId::Append(1);
 
     let last_file = file_ids
         .iter()
-        .filter(|f| !f.compacted)
-        .max_by(|a, b| a.version.cmp(&b.version))
+        .filter(|f| f.is_append())
+        .max_by(|a, b| a.cmp(&b))
         .unwrap_or(&default_file)
         .clone();
 
@@ -122,26 +139,26 @@ mod tests {
 
     #[test]
     fn test_file_id_parse() {
-        let res1 = FileId::parse("log_a_1");
+        let res1 = FileId::parse("a_1");
         assert_eq!(res1.is_err(), false);
         let file_id = res1.unwrap();
-        assert_eq!(file_id.compacted, false);
-        assert_eq!(file_id.version, 1);
+        assert_eq!(file_id.is_compacted(), false);
+        assert_eq!(file_id.version(), 1);
 
-        let res2 = FileId::parse("log_c_2");
+        let res2 = FileId::parse("c_2");
         assert_eq!(res2.is_err(), false);
         let file_id_2 = res2.unwrap();
-        assert_eq!(file_id_2.compacted, true);
-        assert_eq!(file_id_2.version, 2);
+        assert_eq!(file_id_2.is_compacted(), true);
+        assert_eq!(file_id_2.version(), 2);
     }
 
     #[test]
     fn test_file_id_to_string() {
-        let s1: String = FileId::new(12, false).into();
-        assert_eq!("log_a_12".to_string(), s1);
+        let s1: String = FileId::Append(12).into();
+        assert_eq!("a_12".to_string(), s1);
 
-        let s2: String = FileId::new(10, true).into();
-        assert_eq!("log_c_10".to_string(), s2);
+        let s2: String = FileId::Compact(10).into();
+        assert_eq!("c_10".to_string(), s2);
     }
 
     #[test]
@@ -158,11 +175,11 @@ mod tests {
         let file_extract = res.unwrap();
         assert_eq!(file_extract.files.len(), 1);
 
-        assert_eq!(file_extract.files[0].compacted, false);
-        assert_eq!(file_extract.files[0].version, 1);
+        assert_eq!(file_extract.files[0].is_compacted(), false);
+        assert_eq!(file_extract.files[0].version(), 1);
 
-        assert_eq!(file_extract.write_file.version, 1);
-        assert_eq!(file_extract.write_file.compacted, false);
+        assert_eq!(file_extract.write_file.version(), 1);
+        assert_eq!(file_extract.write_file.is_compacted(), false);
     }
 
     #[test]
@@ -173,9 +190,9 @@ mod tests {
             .tempdir()
             .unwrap();
 
-        let file_path_a_1 = dir.path().join("log_a_1");
-        let file_path_c_1 = dir.path().join("log_c_1");
-        let file_path_a_2 = dir.path().join("log_a_2");
+        let file_path_a_1 = dir.path().join("a_1");
+        let file_path_c_1 = dir.path().join("c_1");
+        let file_path_a_2 = dir.path().join("a_2");
 
         let file_a_1 = File::create(file_path_a_1).unwrap();
         let file_c_1 = File::create(file_path_c_1).unwrap();
@@ -187,16 +204,36 @@ mod tests {
         let file_extract = res.unwrap();
         assert_eq!(file_extract.files.len(), 3);
 
-        assert_eq!(file_extract.files[0].compacted, false);
-        assert_eq!(file_extract.files[0].version, 1);
+        assert_eq!(file_extract.files[0].is_compacted(), false);
+        assert_eq!(file_extract.files[0].version(), 1);
 
-        assert_eq!(file_extract.files[1].compacted, false);
-        assert_eq!(file_extract.files[1].version, 2);
+        assert_eq!(file_extract.files[1].is_compacted(), false);
+        assert_eq!(file_extract.files[1].version(), 2);
 
-        assert_eq!(file_extract.files[2].compacted, true);
-        assert_eq!(file_extract.files[2].version, 1);
+        assert_eq!(file_extract.files[2].is_compacted(), true);
+        assert_eq!(file_extract.files[2].version(), 1);
 
-        assert_eq!(file_extract.write_file.compacted, false);
-        assert_eq!(file_extract.write_file.version, 2);
+        assert_eq!(file_extract.write_file.is_compacted(), false);
+        assert_eq!(file_extract.write_file.version(), 2);
+    }
+
+    #[test]
+    fn test_file_id_ord() {
+        let mut file_ids = vec![
+            FileId::Append(2),
+            FileId::Compact(2),
+            FileId::Temp(2),
+            FileId::Temp(1),
+            FileId::Compact(1),
+            FileId::Append(1),
+        ];
+
+        file_ids.sort();
+
+
+
+        assert_eq!(6, file_ids.len());
+
+
     }
 }
