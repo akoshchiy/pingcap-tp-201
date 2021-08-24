@@ -2,11 +2,10 @@ use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 use super::err::Result;
-use crate::kvs::err::KvError::{ParseFileIdError, WalkDirError};
+use crate::kvs::err::KvError::{ParseFileId, WalkDirError};
 use std::panic::panic_any;
 
-
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub(super) enum FileId {
     Compact(u32),
     Append(u32),
@@ -15,7 +14,7 @@ pub(super) enum FileId {
 
 impl FileId {
     pub fn parse(path: &str) -> Result<FileId> {
-        let err = ParseFileIdError {
+        let err = ParseFileId {
             path: path.to_string(),
         };
         let split: Vec<_> = path.split("_").collect();
@@ -26,7 +25,7 @@ impl FileId {
 
         let ver = match split[1].parse::<u32>() {
             Ok(v) => v,
-            Err(_) => return Err(err)
+            Err(_) => return Err(err),
         };
 
         match split[0] {
@@ -47,6 +46,13 @@ impl FileId {
     pub fn is_compacted(&self) -> bool {
         match self {
             FileId::Compact(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_temp(&self) -> bool {
+        match self {
+            FileId::Temp(_) => true,
             _ => false,
         }
     }
@@ -81,21 +87,30 @@ impl From<FileId> for String {
 }
 
 pub(super) struct FileExtract {
-    pub files: Vec<FileId>,
-    pub write_file: FileId,
+    pub compact_files: Vec<FileId>,
+    pub append_files: Vec<FileId>,
+    pub temp_files: Vec<FileId>,
+    pub last_version: u32,
 }
 
 pub(super) fn extract_files(path: &Path) -> Result<FileExtract> {
     let entries = WalkDir::new(path).into_iter();
 
-    let mut file_ids = Vec::new();
+    let mut append_files = Vec::new();
+    let mut compact_files = Vec::new();
+    let mut temp_files = Vec::new();
+
+    let mut last_version: u32 = 0;
 
     for entry_res in entries {
         let entry = match entry_res {
             Ok(entry) => entry,
-            Err(_) => return Err(WalkDirError {
-                path: path.display().to_string(),
-            }),
+            Err(e) => {
+                return Err(WalkDirError {
+                    path: path.display().to_string(),
+                    source: e,
+                });
+            }
         };
 
         let file_name = entry.file_name().to_str().unwrap();
@@ -104,30 +119,29 @@ pub(super) fn extract_files(path: &Path) -> Result<FileExtract> {
             continue;
         }
 
-        let file_id = match FileId::parse(file_name) {
-            Ok(file_id) => file_id,
-            Err(e) => return Err(e),
-        };
+        let file_id = FileId::parse(file_name)?;
 
-        file_ids.push(file_id);
+        match file_id {
+            FileId::Append(_) => append_files.push(file_id),
+            FileId::Compact(_) => compact_files.push(file_id),
+            FileId::Temp(_) => temp_files.push(file_id),
+        }
+
+        let ver = file_id.version();
+        if ver > last_version {
+            last_version = ver;
+        }
     }
 
-    let default_file = FileId::Append(1);
-
-    let last_file = file_ids
-        .iter()
-        .filter(|f| f.is_append())
-        .max_by(|a, b| a.cmp(&b))
-        .unwrap_or(&default_file)
-        .clone();
-
-    if file_ids.is_empty() {
-        file_ids.push(default_file);
-    }
+    append_files.sort();
+    compact_files.sort();
+    temp_files.sort();
 
     Ok(FileExtract {
-        files: file_ids,
-        write_file: last_file,
+        compact_files,
+        append_files,
+        temp_files,
+        last_version,
     })
 }
 
@@ -171,15 +185,11 @@ mod tests {
         let res = extract_files(temp_dir.path());
 
         assert_eq!(res.is_ok(), true);
-
         let file_extract = res.unwrap();
-        assert_eq!(file_extract.files.len(), 1);
 
-        assert_eq!(file_extract.files[0].is_compacted(), false);
-        assert_eq!(file_extract.files[0].version(), 1);
-
-        assert_eq!(file_extract.write_file.version(), 1);
-        assert_eq!(file_extract.write_file.is_compacted(), false);
+        assert_eq!(file_extract.append_files.len(), 0);
+        assert_eq!(file_extract.temp_files.len(), 0);
+        assert_eq!(file_extract.compact_files.len(), 0);
     }
 
     #[test]
@@ -199,22 +209,28 @@ mod tests {
         let file_a_2 = File::create(file_path_a_2).unwrap();
 
         let res = extract_files(dir.path());
-        assert_eq!(res.is_ok(), true);
+        // assert_eq!(res.is_ok(), true);
 
         let file_extract = res.unwrap();
-        assert_eq!(file_extract.files.len(), 3);
+        assert_eq!(file_extract.append_files.len(), 2);
 
-        assert_eq!(file_extract.files[0].is_compacted(), false);
-        assert_eq!(file_extract.files[0].version(), 1);
+        assert_eq!(file_extract.append_files[0].is_append(), true);
+        assert_eq!(file_extract.append_files[0].version(), 1);
 
-        assert_eq!(file_extract.files[1].is_compacted(), false);
-        assert_eq!(file_extract.files[1].version(), 2);
+        assert_eq!(file_extract.append_files[1].is_append(), true);
+        assert_eq!(file_extract.append_files[1].version(), 2);
 
-        assert_eq!(file_extract.files[2].is_compacted(), true);
-        assert_eq!(file_extract.files[2].version(), 1);
+        assert_eq!(file_extract.compact_files.len(), 1);
+        assert_eq!(file_extract.compact_files[0].is_append(), true);
+        assert_eq!(file_extract.compact_files[0].version(), 1);
 
-        assert_eq!(file_extract.write_file.is_compacted(), false);
-        assert_eq!(file_extract.write_file.version(), 2);
+        assert_eq!(file_extract.last_version, 2);
+
+        // assert_eq!(file_extract.files[2].is_compacted(), true);
+        // assert_eq!(file_extract.files[2].version(), 1);
+        //
+        // assert_eq!(file_extract.write_file.is_compacted(), false);
+        // assert_eq!(file_extract.write_file.version(), 2);
     }
 
     #[test]
@@ -230,10 +246,6 @@ mod tests {
 
         file_ids.sort();
 
-
-
         assert_eq!(6, file_ids.len());
-
-
     }
 }

@@ -1,5 +1,6 @@
 use std::error::Error;
 use thiserror::Error;
+use crate::kvs::io::{LogFrame, LogEntry};
 
 #[derive(Error, Debug)]
 pub enum KvError {
@@ -7,13 +8,19 @@ pub enum KvError {
     FileError { file: String },
 
     #[error("parse file_id error: {path}")]
-    ParseFileIdError { path: String },
+    ParseFileId { path: String },
 
-    #[error("walk_dir error: {path}")]
-    WalkDirError { path: String },
+    #[error("walk_dir error: {path} source -> {source}")]
+    WalkDirError { path: String, source: walkdir::Error },
 
-    #[error("io error")]
-    IoError { source: std::io::Error },
+    #[error(transparent)]
+    Io(std::io::Error),
+
+    #[error("deserialize entry failed at pos: {pos}, source -> {source}")]
+    DeserializeEntry { pos: u32, source: bson::de::Error },
+
+    #[error("serialize entry failed: {entry:?}, source -> {source}")]
+    SerializeEntry { entry: LogEntry, source: bson::ser::Error },
 
     #[error("noop")]
     Noop,

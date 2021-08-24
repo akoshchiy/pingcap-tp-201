@@ -1,16 +1,17 @@
 use super::err::Result;
-use crate::kvs::file::{FileId, extract_files};
-use std::collections::HashMap;
+use crate::kvs::file::{extract_files, FileExtract, FileId};
+use std::collections::{BTreeMap, HashMap};
 
 use super::file;
-use std::path::{PathBuf, Path};
 use crate::kvs::err::KvError::Noop;
 use crate::kvs::io::{LogReader, LogWriter};
 use std::fs::{File, OpenOptions};
+use std::path::{Path, PathBuf};
+use std::process::exit;
 
 pub struct KvStore {
     mem_table: HashMap<String, TableEntry>,
-    readers: HashMap<u32, LogReader<File>>,
+    readers: BTreeMap<FileId, LogReader<File>>,
     writer: LogWriter<File>,
     uncompacted_count: usize,
 }
@@ -32,14 +33,14 @@ impl KvStore {
             Err(e) => return Err(Noop),
         };
 
-        let readers = prepare_readers(&file_extract.files, path.as_path())?;
-        let writer = open_writer(&file_extract.write_file, path.as_path())?;
+        let readers = prepare_readers(&file_extract, path.as_path())?;
+        let writer = prepare_writer(&file_extract, path.as_path())?;
 
         let mut store = KvStore {
             mem_table: HashMap::new(),
             readers,
             writer,
-            uncompacted_count: 0
+            uncompacted_count: 0,
         };
 
         store.fill_mem_table();
@@ -49,6 +50,18 @@ impl KvStore {
 
     fn fill_mem_table(&mut self) {
         let table = &mut self.mem_table;
+        let readers = &mut self.readers;
+
+        for pair in readers {
+            let file_id = *pair.0;
+            let reader = pair.1;
+            loop {
+                let frame = match reader.read_next() {
+                    Ok(frame) => frame,
+                    Err(e) => return,
+                };
+            }
+        }
     }
 
     pub fn get(&self, key: String) -> Result<Option<String>> {
@@ -67,17 +80,44 @@ impl KvStore {
     }
 }
 
-fn prepare_readers(files: &[FileId], path: &Path) -> Result<HashMap<u32, LogReader<File>>> {
-    let mut map = HashMap::new();
+fn prepare_readers(
+    extract: &FileExtract,
+    path: &Path,
+) -> Result<BTreeMap<FileId, LogReader<File>>> {
+    let mut readers = BTreeMap::new();
+
+    let mut files = Vec::with_capacity(2);
+
+    if !extract.compact_files.is_empty() {
+        let last_compact_file = &extract.compact_files[extract.compact_files.len() - 1];
+        files.push(last_compact_file);
+    }
+
+    if !extract.append_files.is_empty() {
+        let last_append_file = &extract.append_files[extract.append_files.len() - 1];
+        files.push(last_append_file);
+    }
+
     for file in files {
         match open_reader(file, path) {
             Ok(reader) => {
-                map.insert(file.version(), reader);
-            },
-            Err(_) => return Err(Noop)
+                readers.insert(file.clone(), reader);
+            }
+            Err(_) => return Err(Noop),
         };
     }
-    Ok(map)
+    Ok(readers)
+}
+
+fn prepare_writer(extract: &FileExtract, path: &Path) -> Result<LogWriter<File>> {
+    let first_append_file = FileId::Append(extract.last_version + 1);
+
+    let file_id = extract
+        .append_files
+        .get(extract.append_files.len() - 1)
+        .unwrap_or(&first_append_file);
+
+    open_writer(file_id, path)
 }
 
 fn open_reader(file_id: &FileId, root_path: &Path) -> Result<LogReader<File>> {
@@ -85,7 +125,7 @@ fn open_reader(file_id: &FileId, root_path: &Path) -> Result<LogReader<File>> {
     let file_path = root_path.join(Path::new(&file_str));
     match File::open(file_path.as_path()) {
         Ok(f) => Ok(LogReader::new(f)),
-        Err(e) => Err(Noop)
+        Err(e) => Err(Noop),
     }
 }
 
@@ -100,6 +140,6 @@ fn open_writer(file_id: &FileId, root_path: &Path) -> Result<LogWriter<File>> {
 
     match file_res {
         Ok(f) => Ok(LogWriter::new(f)),
-        Err(e) => Err(Noop)
+        Err(e) => Err(Noop),
     }
 }
