@@ -6,6 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write, ErrorKind};
 use std::fs::ReadDir;
+use crate::kvs::err::KvError;
 
 const FRAME_HEADER_SIZE: usize = 4;
 
@@ -20,16 +21,11 @@ pub enum LogEntry {
 pub(super) struct LogFrame {
     pub entry: LogEntry,
     pub offset: u32,
-    pub size: u32,
 }
 
 pub(super) struct LogReader<R: Read + Seek> {
     reader: BufReader<R>,
     pos: u32,
-}
-
-struct IoOp {
-    eof: bool,
 }
 
 impl<R: Read + Seek> LogReader<R> {
@@ -40,9 +36,21 @@ impl<R: Read + Seek> LogReader<R> {
         }
     }
 
-    pub(super) fn read_next(&mut self) -> Result<LogFrame> {
-        let frame = self.read_pos(self.pos)?;
-        Ok(frame)
+    pub(super) fn read_next(&mut self) -> Result<Option<LogFrame>> {
+        match self.read_pos(self.pos) {
+            Ok(f) => Ok(Some(f)),
+            Err(e) => {
+                match e {
+                    KvError::Io(io_err) => {
+                        match io_err.kind() {
+                            ErrorKind::UnexpectedEof => Ok(None),
+                            _ => Err(Io(io_err)),
+                        }
+                    },
+                    _ => Err(e)
+                }
+            }
+        }
     }
 
     pub(super) fn read_pos(&mut self, pos: u32) -> Result<LogFrame> {
@@ -58,7 +66,6 @@ impl<R: Read + Seek> LogReader<R> {
         let entry_res = bson::from_slice(vec.as_slice());
         match entry_res {
             Ok(entry) => Ok(LogFrame {
-                size: vec.len() as u32,
                 offset: pos,
                 entry,
             }),
@@ -96,35 +103,36 @@ impl<R: Read + Seek> LogReader<R> {
 
 pub(super) struct LogWriter<W: Write> {
     writer: BufWriter<W>,
+    pos: u32,
 }
 
 impl<W: Write> LogWriter<W> {
     pub(super) fn new(writer: W) -> LogWriter<W> {
         LogWriter {
             writer: BufWriter::new(writer),
+            pos: 0,
         }
     }
 
     pub(super) fn write(&mut self, entry: LogEntry) -> Result<()> {
-        let entry_buf = match bson::to_vec(&entry) {
-            Ok(entry_buf) => entry_buf,
-            Err(err) => return Err(SerializeEntry { entry, source: err }),
-        };
+        let entry_buf = bson::to_vec(&entry)
+            .map_err(|e| SerializeEntry { entry, source: e })?;
 
         let len = entry_buf.len() as u32;
 
         self.write_size(len)?;
 
-        let write_res = self.writer.write(entry_buf.as_slice());
-        match write_res {
-            Ok(_) => (),
-            Err(e) => return Err(Io(e)),
-        }
+        self.writer
+            .write(entry_buf.as_slice())
+            .map_err(|e| Io(e))?;
 
-        match self.writer.flush() {
-            Ok(_) => Ok(()),
-            Err(e) => Err(Io(e)),
-        }
+        self.writer
+            .flush()
+            .map_err(|e| Io(e))?;
+
+        self.pos += FRAME_HEADER_SIZE as u32 + len;
+
+        Ok(())
     }
 
     fn write_size(&mut self, size: u32) -> Result<()> {
@@ -181,9 +189,8 @@ mod tests {
 
         let res = reader.read_next();
 
-        let frame = res.unwrap();
+        let frame = res.unwrap().unwrap();
         assert_eq!(frame.offset, 0);
-        assert_eq!(frame.size + 4, entry_size);
 
         if let LogEntry::Set { key, val } = frame.entry {
             assert_eq!(key, "key1");

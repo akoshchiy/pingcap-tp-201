@@ -93,8 +93,10 @@ pub(super) struct FileExtract {
     pub last_version: u32,
 }
 
-pub(super) fn extract_files(path: &Path) -> Result<FileExtract> {
-    let entries = WalkDir::new(path).into_iter();
+pub(super) fn extract_files(path: impl AsRef<Path>) -> Result<FileExtract> {
+    let path_ref = path.as_ref();
+
+    let entries = WalkDir::new(path_ref).into_iter();
 
     let mut append_files = Vec::new();
     let mut compact_files = Vec::new();
@@ -107,7 +109,7 @@ pub(super) fn extract_files(path: &Path) -> Result<FileExtract> {
             Ok(entry) => entry,
             Err(e) => {
                 return Err(WalkDirError {
-                    path: path.display().to_string(),
+                    path: path_ref.display().to_string(),
                     source: e,
                 });
             }

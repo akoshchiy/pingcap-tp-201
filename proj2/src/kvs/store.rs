@@ -4,10 +4,11 @@ use std::collections::{BTreeMap, HashMap};
 
 use super::file;
 use crate::kvs::err::KvError::Noop;
-use crate::kvs::io::{LogReader, LogWriter};
+use crate::kvs::io::{LogReader, LogWriter, LogFrame, LogEntry};
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use crate::kvs::err::KvError;
 
 pub struct KvStore {
     mem_table: HashMap<String, TableEntry>,
@@ -19,57 +20,47 @@ pub struct KvStore {
 struct TableEntry {
     file_id: FileId,
     offset: u32,
-    len: u32,
 }
 
 impl KvStore {
     pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
         let path = path.into();
 
-        let file_extract_res = extract_files(path.as_path());
-
-        let file_extract = match file_extract_res {
-            Ok(file_extract) => file_extract,
-            Err(e) => return Err(Noop),
-        };
-
-        let readers = prepare_readers(&file_extract, path.as_path())?;
+        let file_extract = extract_files(path.as_path())?;
+        let mut readers = prepare_readers(&file_extract, path.as_path())?;
         let writer = prepare_writer(&file_extract, path.as_path())?;
+        let table = prepare_table(&mut readers)?;
 
-        let mut store = KvStore {
-            mem_table: HashMap::new(),
+        Ok(KvStore {
+            mem_table: table,
             readers,
             writer,
             uncompacted_count: 0,
+        })
+    }
+
+    pub fn get(&mut self, key: String) -> Result<Option<String>> {
+        let entry = match self.mem_table.get(&key) {
+            Some(entry) => entry,
+            None => return Ok(None),
         };
 
-        store.fill_mem_table();
+        let mut reader = match self.readers.get_mut(&entry.file_id) {
+            Some(reader) => reader,
+            None => return Ok(None),
+        };
 
-        Ok(store)
-    }
-
-    fn fill_mem_table(&mut self) {
-        let table = &mut self.mem_table;
-        let readers = &mut self.readers;
-
-        for pair in readers {
-            let file_id = *pair.0;
-            let reader = pair.1;
-            loop {
-                let frame = match reader.read_next() {
-                    Ok(frame) => frame,
-                    Err(e) => return,
-                };
-            }
-        }
-    }
-
-    pub fn get(&self, key: String) -> Result<Option<String>> {
-        // self.store.get(&key).cloned()
-        unimplemented!()
+        reader.read_pos(entry.offset)
+            .map(|frame| {
+                match frame.entry {
+                    LogEntry::Set { val, ..} => Some(val),
+                    _ => None,
+                }
+            })
     }
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
+        // self.writer
         // self.store.insert(key, value);
         unimplemented!()
     }
@@ -77,6 +68,38 @@ impl KvStore {
     pub fn remove(&mut self, key: String) -> Result<()> {
         // self.store.remove(&key);
         unimplemented!()
+    }
+}
+
+fn prepare_table(readers: &mut BTreeMap<FileId, LogReader<File>>) -> Result<HashMap<String, TableEntry>> {
+    let mut table = HashMap::new();
+    for pair in readers {
+        fill_table_from(&mut table, *pair.0, pair.1)?;
+    }
+    Ok(table)
+}
+
+fn fill_table_from(
+    table: &mut HashMap<String, TableEntry>,
+    file_id: FileId,
+    reader: &mut LogReader<File>,
+) -> Result<()> {
+    loop {
+        let frame = match reader.read_next()? {
+            Some(frame) => frame,
+            None => return Ok(()),
+        };
+        match frame.entry {
+            LogEntry::Set { key, .. } => {
+                table.insert(key, TableEntry {
+                    file_id,
+                    offset: frame.offset,
+                });
+            }
+            LogEntry::Remove { key } => {
+                table.remove(&key);
+            }
+        };
     }
 }
 
