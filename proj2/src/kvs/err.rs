@@ -4,14 +4,12 @@ use crate::kvs::io::{LogFrame, LogEntry};
 
 #[derive(Error, Debug)]
 pub enum KvError {
-    #[error("file error: {file}")]
-    FileError { file: String },
 
     #[error("parse file_id error: {path}")]
     ParseFileId { path: String },
 
     #[error("walk_dir error: {path} source -> {source}")]
-    WalkDirError { path: String, source: walkdir::Error },
+    Dir { path: String, source: walkdir::Error },
 
     #[error(transparent)]
     Io(std::io::Error),

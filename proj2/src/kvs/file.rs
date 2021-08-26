@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 use super::err::Result;
-use crate::kvs::err::KvError::{ParseFileId, WalkDirError};
+use crate::kvs::err::KvError::{ParseFileId, Dir};
 use std::panic::panic_any;
 
 #[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -108,7 +108,7 @@ pub(super) fn extract_files(path: impl AsRef<Path>) -> Result<FileExtract> {
         let entry = match entry_res {
             Ok(entry) => entry,
             Err(e) => {
-                return Err(WalkDirError {
+                return Err(Dir {
                     path: path_ref.display().to_string(),
                     source: e,
                 });

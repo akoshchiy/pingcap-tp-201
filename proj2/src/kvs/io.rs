@@ -135,6 +135,10 @@ impl<W: Write> LogWriter<W> {
         Ok(())
     }
 
+    pub(super) fn pos(&self) -> u32 {
+        self.pos
+    }
+
     fn write_size(&mut self, size: u32) -> Result<()> {
         let mut buf: [u8; FRAME_HEADER_SIZE] = size.to_be_bytes();
         let res = self.writer.write(&mut buf);

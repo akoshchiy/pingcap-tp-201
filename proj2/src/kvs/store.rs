@@ -13,7 +13,7 @@ use crate::kvs::err::KvError;
 pub struct KvStore {
     mem_table: HashMap<String, TableEntry>,
     readers: BTreeMap<FileId, LogReader<File>>,
-    writer: LogWriter<File>,
+    writer: (FileId, LogWriter<File>),
     uncompacted_count: usize,
 }
 
@@ -53,21 +53,29 @@ impl KvStore {
         reader.read_pos(entry.offset)
             .map(|frame| {
                 match frame.entry {
-                    LogEntry::Set { val, ..} => Some(val),
+                    LogEntry::Set { val, .. } => Some(val),
                     _ => None,
                 }
             })
     }
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        // self.writer
-        // self.store.insert(key, value);
-        unimplemented!()
+        let offset = self.writer.1.pos();
+
+        self.writer.1.write(LogEntry::Set { key: key.clone(), val: value })?;
+
+        self.mem_table.insert(key, TableEntry {
+            file_id: self.writer.0,
+            offset,
+        });
+
+        Ok(())
     }
 
     pub fn remove(&mut self, key: String) -> Result<()> {
-        // self.store.remove(&key);
-        unimplemented!()
+        self.writer.1.write(LogEntry::Remove { key: key.clone() })?;
+        self.mem_table.remove(&key);
+        Ok(())
     }
 }
 
@@ -132,7 +140,7 @@ fn prepare_readers(
     Ok(readers)
 }
 
-fn prepare_writer(extract: &FileExtract, path: &Path) -> Result<LogWriter<File>> {
+fn prepare_writer(extract: &FileExtract, path: &Path) -> Result<(FileId, LogWriter<File>)> {
     let first_append_file = FileId::Append(extract.last_version + 1);
 
     let file_id = extract
@@ -141,6 +149,7 @@ fn prepare_writer(extract: &FileExtract, path: &Path) -> Result<LogWriter<File>>
         .unwrap_or(&first_append_file);
 
     open_writer(file_id, path)
+        .map(|w| (*file_id, w))
 }
 
 fn open_reader(file_id: &FileId, root_path: &Path) -> Result<LogReader<File>> {
