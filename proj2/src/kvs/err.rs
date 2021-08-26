@@ -20,6 +20,9 @@ pub enum KvError {
     #[error("serialize entry failed: {entry:?}, source -> {source}")]
     SerializeEntry { entry: LogEntry, source: bson::ser::Error },
 
+    #[error("Key not found")]
+    KeyNotFound,
+
     #[error("noop")]
     Noop,
 }

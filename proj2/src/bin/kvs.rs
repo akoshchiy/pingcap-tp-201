@@ -1,11 +1,14 @@
 use clap::{load_yaml, App};
 use proj2::kvs::KvStore;
+use proj2::kvs::KvError;
+
 use std::env;
 use std::process::exit;
 
 use std::error::Error;
 use std::fs::File;
 use proj2::kvs;
+use std::borrow::Borrow;
 
 fn main() {
     let dir = env::current_dir().unwrap();
@@ -34,7 +37,16 @@ fn main() {
         }
         Some(("rm", args)) => {
             let key = args.value_of("key").unwrap();
-            store.remove(key.to_string()).unwrap();
+            match store.remove(key.to_string()) {
+                Ok(_) => return,
+                Err(err) => {
+                    match err {
+                        KvError::KeyNotFound => println!("Key not found"),
+                        _ => println!("{:?}", err)
+                    }
+                    exit(1);
+                }
+            };
         }
         _ => {
             unreachable!();

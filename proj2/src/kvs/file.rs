@@ -135,6 +135,10 @@ pub(super) fn extract_files(path: impl AsRef<Path>) -> Result<FileExtract> {
         }
     }
 
+    if append_files.is_empty() {
+        append_files.push(FileId::Append(last_version + 1));
+    }
+
     append_files.sort();
     compact_files.sort();
     temp_files.sort();
@@ -152,6 +156,7 @@ mod tests {
     use crate::kvs::file::{extract_files, FileId};
     use std::fs::File;
     use tempfile::{NamedTempFile, TempDir};
+    use std::collections::{HashSet, HashMap};
 
     #[test]
     fn test_file_id_parse() {
@@ -235,19 +240,32 @@ mod tests {
         // assert_eq!(file_extract.write_file.version(), 2);
     }
 
+    // #[test]
+    // fn test_file_id_ord() {
+    //     let mut file_ids = vec![
+    //         FileId::Append(2),
+    //         FileId::Compact(2),
+    //         FileId::Temp(2),
+    //         FileId::Temp(1),
+    //         FileId::Compact(1),
+    //         FileId::Append(1),
+    //     ];
+    //
+    //     file_ids.sort();
+    //
+    //     assert_eq!(6, file_ids.len());
+    // }
+
     #[test]
-    fn test_file_id_ord() {
-        let mut file_ids = vec![
-            FileId::Append(2),
-            FileId::Compact(2),
-            FileId::Temp(2),
-            FileId::Temp(1),
-            FileId::Compact(1),
-            FileId::Append(1),
-        ];
+    fn test_file_id_as_key_map() {
+        let mut map: HashMap<FileId, usize> = HashMap::new();
 
-        file_ids.sort();
+        map.insert(FileId::Append(1), 1);
+        map.insert(FileId::Append(2), 2);
+        map.insert(FileId::Compact(3), 3);
 
-        assert_eq!(6, file_ids.len());
+        assert_eq!(map.get(&FileId::Append(1)).unwrap(), &1);
+        assert_eq!(map.get(&FileId::Append(2)).unwrap(), &2);
+        assert_eq!(map.get(&FileId::Compact(3)).unwrap(), &3);
     }
 }

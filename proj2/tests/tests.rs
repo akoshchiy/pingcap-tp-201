@@ -16,9 +16,11 @@ fn cli_no_args() {
 // `kvs -V` should print the version
 #[test]
 fn cli_version() {
+    let temp_dir = TempDir::new().unwrap();
     Command::cargo_bin("kvs")
         .unwrap()
         .args(&["-V"])
+        .current_dir(&temp_dir)
         .assert()
         .stdout(contains(env!("CARGO_PKG_VERSION")));
 }

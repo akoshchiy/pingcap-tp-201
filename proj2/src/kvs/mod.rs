@@ -4,4 +4,5 @@ mod io;
 mod store;
 
 pub use err::Result;
+pub use err::KvError;
 pub use store::KvStore;

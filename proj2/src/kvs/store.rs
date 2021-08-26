@@ -27,8 +27,8 @@ impl KvStore {
         let path = path.into();
 
         let file_extract = extract_files(path.as_path())?;
-        let mut readers = prepare_readers(&file_extract, path.as_path())?;
         let writer = prepare_writer(&file_extract, path.as_path())?;
+        let mut readers = prepare_readers(&file_extract, path.as_path())?;
         let table = prepare_table(&mut readers)?;
 
         Ok(KvStore {
@@ -74,8 +74,10 @@ impl KvStore {
 
     pub fn remove(&mut self, key: String) -> Result<()> {
         self.writer.1.write(LogEntry::Remove { key: key.clone() })?;
-        self.mem_table.remove(&key);
-        Ok(())
+
+        self.mem_table.remove(&key)
+            .map(|e| ())
+            .ok_or(KvError::KeyNotFound)
     }
 }
 
@@ -141,12 +143,9 @@ fn prepare_readers(
 }
 
 fn prepare_writer(extract: &FileExtract, path: &Path) -> Result<(FileId, LogWriter<File>)> {
-    let first_append_file = FileId::Append(extract.last_version + 1);
-
-    let file_id = extract
-        .append_files
+    let file_id = extract.append_files
         .get(extract.append_files.len() - 1)
-        .unwrap_or(&first_append_file);
+        .unwrap();
 
     open_writer(file_id, path)
         .map(|w| (*file_id, w))
@@ -173,5 +172,19 @@ fn open_writer(file_id: &FileId, root_path: &Path) -> Result<LogWriter<File>> {
     match file_res {
         Ok(f) => Ok(LogWriter::new(f)),
         Err(e) => Err(Noop),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+    use crate::kvs::KvStore;
+
+    #[test]
+    fn test_get_non_existent_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut store = KvStore::open(temp_dir.into_path()).unwrap();
+        let result = store.get("key1".to_owned()).unwrap();
+        assert_eq!(result.is_none(), true);
     }
 }
