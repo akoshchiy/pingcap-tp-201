@@ -264,6 +264,9 @@ fn remove_key() -> Result<()> {
 #[test]
 fn compaction() -> Result<()> {
     let temp_dir = TempDir::new().expect("unable to create temporary working directory");
+
+    println!("{}", temp_dir.path().display().to_string());
+
     let mut store = KvStore::open(temp_dir.path())?;
 
     let dir_size = || {

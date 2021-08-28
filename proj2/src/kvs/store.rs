@@ -3,20 +3,24 @@ use crate::kvs::file::{extract_files, FileExtract, FileId};
 use std::collections::{BTreeMap, HashMap};
 
 use super::file;
-use crate::kvs::err::KvError::Noop;
+use crate::kvs::err::KvError::{Noop, Io};
 use crate::kvs::io::{LogReader, LogWriter, LogFrame, LogEntry};
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use crate::kvs::err::KvError;
 
+const DUPLICATE_COUNT_THRESHOLD: u32 = 1000;
+
 pub struct KvStore {
+    root_path: PathBuf,
     mem_table: HashMap<String, TableEntry>,
     readers: BTreeMap<FileId, LogReader<File>>,
     writer: (FileId, LogWriter<File>),
-    uncompacted_count: usize,
+    duplicate_count: u32,
 }
 
+#[derive(Debug, Copy, Clone)]
 struct TableEntry {
     file_id: FileId,
     offset: u32,
@@ -32,10 +36,11 @@ impl KvStore {
         let table = prepare_table(&mut readers)?;
 
         Ok(KvStore {
+            root_path: path,
             mem_table: table,
             readers,
             writer,
-            uncompacted_count: 0,
+            duplicate_count: 0,
         })
     }
 
@@ -44,19 +49,7 @@ impl KvStore {
             Some(entry) => entry,
             None => return Ok(None),
         };
-
-        let mut reader = match self.readers.get_mut(&entry.file_id) {
-            Some(reader) => reader,
-            None => return Ok(None),
-        };
-
-        reader.read_pos(entry.offset)
-            .map(|frame| {
-                match frame.entry {
-                    LogEntry::Set { val, .. } => Some(val),
-                    _ => None,
-                }
-            })
+        read_entry(&mut self.readers, *entry)
     }
 
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
@@ -64,10 +57,18 @@ impl KvStore {
 
         self.writer.1.write(LogEntry::Set { key: key.clone(), val: value })?;
 
+        if self.mem_table.contains_key(&key) {
+            self.duplicate_count += 1;
+        }
+
         self.mem_table.insert(key, TableEntry {
             file_id: self.writer.0,
             offset,
         });
+
+        if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+            self.compact()?;
+        }
 
         Ok(())
     }
@@ -75,10 +76,84 @@ impl KvStore {
     pub fn remove(&mut self, key: String) -> Result<()> {
         self.writer.1.write(LogEntry::Remove { key: key.clone() })?;
 
-        self.mem_table.remove(&key)
+        self.duplicate_count += 1;
+
+        let res = self.mem_table.remove(&key)
             .map(|e| ())
-            .ok_or(KvError::KeyNotFound)
+            .ok_or(KvError::KeyNotFound);
+
+        if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+            self.compact()?;
+        }
+
+        res
     }
+
+    fn compact(&mut self) -> Result<()> {
+        let file_id = FileId::Compact(self.writer.0.version());
+        self.write_compact_file(&file_id);
+
+        let mut reader = open_reader(&file_id, &self.root_path)?;
+
+        fill_table_from(
+            &mut self.mem_table,
+            file_id,
+            &mut reader
+        )?;
+
+        for kv in &self.readers {
+            remove_file(kv.0, &self.root_path);
+        }
+
+        self.readers.clear();
+        self.readers.insert(file_id, reader);
+
+        let append_file_id = FileId::Append(file_id.version() + 1);
+
+        let writer = open_writer(&append_file_id, &self.root_path)?;
+        self.writer = (append_file_id, writer);
+
+        let append_reader = open_reader(&append_file_id, &self.root_path)?;
+        self.readers.insert(append_file_id, append_reader);
+
+        self.duplicate_count = 0;
+
+        Ok(())
+    }
+
+    fn write_compact_file(&mut self, file_id: &FileId) -> Result<()> {
+        let mut writer = open_writer(file_id, self.root_path.as_path())?;
+
+        for pair in &mut self.mem_table {
+            let val = match read_entry(&mut self.readers, *pair.1)? {
+                Some(val) => val,
+                None => continue,
+            };
+            let entry = LogEntry::Set { key: (*pair.0).clone(), val };
+            writer.write(entry);
+        };
+
+        Ok(())
+    }
+}
+
+fn read_entry(
+    readers: &mut BTreeMap<FileId, LogReader<File>>,
+    entry: TableEntry
+) -> Result<Option<String>> {
+
+    let mut reader = match readers.get_mut(&entry.file_id) {
+        Some(reader) => reader,
+        None => return Ok(None),
+    };
+
+    reader.read_pos(entry.offset)
+        .map(|frame| {
+            match frame.entry {
+                LogEntry::Set { val, .. } => Some(val),
+                _ => None,
+            }
+        })
 }
 
 fn prepare_table(readers: &mut BTreeMap<FileId, LogReader<File>>) -> Result<HashMap<String, TableEntry>> {
@@ -156,7 +231,7 @@ fn open_reader(file_id: &FileId, root_path: &Path) -> Result<LogReader<File>> {
     let file_path = root_path.join(Path::new(&file_str));
     match File::open(file_path.as_path()) {
         Ok(f) => Ok(LogReader::new(f)),
-        Err(e) => Err(Noop),
+        Err(e) => Err(Io(e)),
     }
 }
 
@@ -171,8 +246,16 @@ fn open_writer(file_id: &FileId, root_path: &Path) -> Result<LogWriter<File>> {
 
     match file_res {
         Ok(f) => Ok(LogWriter::new(f)),
-        Err(e) => Err(Noop),
+        Err(e) => Err(Io(e)),
     }
+}
+
+fn remove_file(file_id: &FileId, root_path: &Path) -> Result<()> {
+    let file_str: String = file_id.into();
+    let file_path = root_path.join(Path::new(&file_str));
+
+    std::fs::remove_file(file_path.as_path())
+        .map_err(|e| Io(e))
 }
 
 #[cfg(test)]
