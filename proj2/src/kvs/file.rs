@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 use super::err::Result;
-use crate::kvs::err::KvError::{ParseFileId, Dir};
+use crate::kvs::err::KvError::{Dir, ParseFileId};
 use std::panic::panic_any;
 
 #[derive(Debug, Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -154,9 +154,9 @@ pub(super) fn extract_files(path: impl AsRef<Path>) -> Result<FileExtract> {
 #[cfg(test)]
 mod tests {
     use crate::kvs::file::{extract_files, FileId};
+    use std::collections::{HashMap, HashSet};
     use std::fs::File;
     use tempfile::{NamedTempFile, TempDir};
-    use std::collections::{HashSet, HashMap};
 
     #[test]
     fn test_file_id_parse() {

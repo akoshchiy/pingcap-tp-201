@@ -397,6 +397,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "proj3"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "bson",
+ "clap",
+ "predicates",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "walkdir",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"

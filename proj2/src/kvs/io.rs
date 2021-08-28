@@ -1,12 +1,12 @@
 use super::err::Result;
-use crate::kvs::err::KvError::{Io, Noop, DeserializeEntry, SerializeEntry};
+use crate::kvs::err::KvError::{DeserializeEntry, Io, SerializeEntry};
 use std::convert::TryInto;
 use std::path::Path;
 
-use serde::{Deserialize, Serialize};
-use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write, ErrorKind};
-use std::fs::ReadDir;
 use crate::kvs::err::KvError;
+use serde::{Deserialize, Serialize};
+use std::fs::ReadDir;
+use std::io::{BufReader, BufWriter, ErrorKind, Read, Seek, SeekFrom, Write};
 
 const FRAME_HEADER_SIZE: usize = 4;
 
@@ -39,17 +39,13 @@ impl<R: Read + Seek> LogReader<R> {
     pub(super) fn read_next(&mut self) -> Result<Option<LogFrame>> {
         match self.read_pos(self.pos) {
             Ok(f) => Ok(Some(f)),
-            Err(e) => {
-                match e {
-                    KvError::Io(io_err) => {
-                        match io_err.kind() {
-                            ErrorKind::UnexpectedEof => Ok(None),
-                            _ => Err(Io(io_err)),
-                        }
-                    },
-                    _ => Err(e)
-                }
-            }
+            Err(e) => match e {
+                KvError::Io(io_err) => match io_err.kind() {
+                    ErrorKind::UnexpectedEof => Ok(None),
+                    _ => Err(Io(io_err)),
+                },
+                _ => Err(e),
+            },
         }
     }
 
@@ -65,14 +61,8 @@ impl<R: Read + Seek> LogReader<R> {
 
         let entry_res = bson::from_slice(vec.as_slice());
         match entry_res {
-            Ok(entry) => Ok(LogFrame {
-                offset: pos,
-                entry,
-            }),
-            Err(err) => Err(DeserializeEntry {
-                pos,
-                source: err,
-            }),
+            Ok(entry) => Ok(LogFrame { offset: pos, entry }),
+            Err(err) => Err(DeserializeEntry { pos, source: err }),
         }
     }
 
@@ -82,8 +72,7 @@ impl<R: Read + Seek> LogReader<R> {
 
     fn read_size(&mut self) -> Result<u32> {
         let mut buf = [0u8; FRAME_HEADER_SIZE];
-        self.read_exact(&mut buf)
-            .map(|_| u32::from_be_bytes(buf))
+        self.read_exact(&mut buf).map(|_| u32::from_be_bytes(buf))
     }
 
     fn seek_pos(&mut self, pos: u32) -> Result<()> {
@@ -95,9 +84,7 @@ impl<R: Read + Seek> LogReader<R> {
     }
 
     fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
-        self.reader
-            .read_exact(buf)
-            .map_err(|e| Io(e))
+        self.reader.read_exact(buf).map_err(|e| Io(e))
     }
 }
 
@@ -115,20 +102,15 @@ impl<W: Write> LogWriter<W> {
     }
 
     pub(super) fn write(&mut self, entry: LogEntry) -> Result<()> {
-        let entry_buf = bson::to_vec(&entry)
-            .map_err(|e| SerializeEntry { entry, source: e })?;
+        let entry_buf = bson::to_vec(&entry).map_err(|e| SerializeEntry { entry, source: e })?;
 
         let len = entry_buf.len() as u32;
 
         self.write_size(len)?;
 
-        self.writer
-            .write(entry_buf.as_slice())
-            .map_err(|e| Io(e))?;
+        self.writer.write(entry_buf.as_slice()).map_err(|e| Io(e))?;
 
-        self.writer
-            .flush()
-            .map_err(|e| Io(e))?;
+        self.writer.flush().map_err(|e| Io(e))?;
 
         self.pos += FRAME_HEADER_SIZE as u32 + len;
 

@@ -11,5 +11,6 @@
 [workspace]
 members = [
     "proj1",
-    "proj2"
+    "proj2",
+    "proj3"
 ]
