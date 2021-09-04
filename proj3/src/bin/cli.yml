@@ -1,0 +1,32 @@
+name: kvs
+version: "0.1.0"
+args:
+  - version:
+      help: version of kvs
+      short: V
+subcommands:
+  - set:
+      about: set the key-value with input
+      args:
+        - key:
+            index: 1
+            help: key to set
+            required: true
+        - value:
+            index: 2
+            help: value to set
+            required: true
+  - get:
+      about: get the value by the key
+      args:
+        - key:
+            index: 1
+            help: key
+            required: true
+  - rm:
+      about: remove value by key
+      args:
+        - key:
+            index: 1
+            help: key
+            required: true
