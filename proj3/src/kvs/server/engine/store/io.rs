@@ -1,5 +1,5 @@
-use super::err::Result;
 use crate::kvs::err::KvError::{DeserializeEntry, Io, SerializeEntry};
+use crate::kvs::err::Result;
 use std::convert::TryInto;
 use std::path::Path;
 
@@ -133,8 +133,7 @@ impl<W: Write> LogWriter<W> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kvs::io::{LogEntry, LogReader, LogWriter};
-    use std::borrow::Borrow;
+    use crate::kvs::server::engine::store::io::{LogEntry, LogReader, LogWriter};
     use std::io::{Cursor, Read, Write};
 
     struct WriteBuffer {

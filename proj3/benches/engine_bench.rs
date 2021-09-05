@@ -1,9 +1,8 @@
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use kvs::{KvStore, KvsEngine, SledKvsEngine};
+use proj3::kvs::{KvStore, KvsEngine, SledKvsEngine};
 use rand::prelude::*;
 use sled;
 use tempfile::TempDir;
-use proj3::kvs::KvStore;
 
 fn set_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("set_bench");

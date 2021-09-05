@@ -1,11 +1,12 @@
-use super::err::Result;
-use crate::kvs::file::{extract_files, FileExtract, FileId};
+use crate::kvs::err::Result;
 use std::collections::{BTreeMap, HashMap};
 
 use super::file;
 use crate::kvs::err::KvError;
 use crate::kvs::err::KvError::Io;
-use crate::kvs::io::{LogEntry, LogFrame, LogReader, LogWriter};
+use crate::kvs::server::engine::store::file::{extract_files, FileExtract, FileId};
+use crate::kvs::server::engine::store::io::{LogEntry, LogReader, LogWriter};
+use crate::kvs::server::engine::KvsEngine;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::exit;
@@ -42,59 +43,6 @@ impl KvStore {
             writer,
             duplicate_count: 0,
         })
-    }
-
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        let entry = match self.mem_table.get(&key) {
-            Some(entry) => entry,
-            None => return Ok(None),
-        };
-        read_entry(&mut self.readers, *entry)
-    }
-
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        let offset = self.writer.1.pos();
-
-        self.writer.1.write(LogEntry::Set {
-            key: key.clone(),
-            val: value,
-        })?;
-
-        if self.mem_table.contains_key(&key) {
-            self.duplicate_count += 1;
-        }
-
-        self.mem_table.insert(
-            key,
-            TableEntry {
-                file_id: self.writer.0,
-                offset,
-            },
-        );
-
-        if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
-            self.compact()?;
-        }
-
-        Ok(())
-    }
-
-    pub fn remove(&mut self, key: String) -> Result<()> {
-        self.writer.1.write(LogEntry::Remove { key: key.clone() })?;
-
-        self.duplicate_count += 1;
-
-        let res = self
-            .mem_table
-            .remove(&key)
-            .map(|e| ())
-            .ok_or(KvError::KeyNotFound);
-
-        if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
-            self.compact()?;
-        }
-
-        res
     }
 
     fn compact(&mut self) -> Result<()> {
@@ -141,6 +89,61 @@ impl KvStore {
         }
 
         Ok(())
+    }
+}
+
+impl KvsEngine for KvStore {
+    fn get(&mut self, key: String) -> Result<Option<String>> {
+        let entry = match self.mem_table.get(&key) {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+        read_entry(&mut self.readers, *entry)
+    }
+
+    fn set(&mut self, key: String, value: String) -> Result<()> {
+        let offset = self.writer.1.pos();
+
+        self.writer.1.write(LogEntry::Set {
+            key: key.clone(),
+            val: value,
+        })?;
+
+        if self.mem_table.contains_key(&key) {
+            self.duplicate_count += 1;
+        }
+
+        self.mem_table.insert(
+            key,
+            TableEntry {
+                file_id: self.writer.0,
+                offset,
+            },
+        );
+
+        if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+            self.compact()?;
+        }
+
+        Ok(())
+    }
+
+    fn remove(&mut self, key: String) -> Result<()> {
+        self.writer.1.write(LogEntry::Remove { key: key.clone() })?;
+
+        self.duplicate_count += 1;
+
+        let res = self
+            .mem_table
+            .remove(&key)
+            .map(|e| ())
+            .ok_or(KvError::KeyNotFound);
+
+        if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+            self.compact()?;
+        }
+
+        res
     }
 }
 
@@ -269,7 +272,8 @@ fn remove_file(file_id: &FileId, root_path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kvs::KvStore;
+    use crate::kvs::server::engine::store::kv_store::KvStore;
+    use crate::kvs::KvsEngine;
     use tempfile::TempDir;
 
     #[test]

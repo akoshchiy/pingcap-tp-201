@@ -1,7 +1,6 @@
-use kvs::{KvStore, KvsEngine, Result};
+use proj3::kvs::{KvStore, KvsEngine, Result};
 use tempfile::TempDir;
 use walkdir::WalkDir;
-use proj3::kvs::{KvStore, Result};
 
 // Should get previously stored value
 #[test]

@@ -1,0 +1,10 @@
+name: kvs
+version: "0.1.0"
+args:
+  - version:
+      help: "Print the version"
+      short: V
+  - addr:
+      help: "IP address, either v4 or v6, and a port number, with the format IP:PORT. If --addr is not specified then listen on 127.0.0.1:4000"
+  - engine:
+      help: 'must be either "kvs", in which case the built-in engine is used, or "sled", in which case sled is used.'

@@ -1,4 +1,4 @@
-use crate::kvs::io::{LogEntry, LogFrame};
+use crate::kvs::LogEntry;
 use std::error::Error;
 use thiserror::Error;
 
