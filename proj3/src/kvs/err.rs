@@ -1,8 +1,8 @@
 use crate::kvs::LogEntry;
 use std::error::Error;
-use thiserror::Error;
 use std::str::Utf8Error;
 use std::string::FromUtf8Error;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum KvError {
@@ -31,16 +31,10 @@ pub enum KvError {
     KeyNotFound,
 
     #[error("sled error, key: {key}, source -> {source}")]
-    Sled {
-        key: String,
-        source: sled::Error,
-    },
+    Sled { key: String, source: sled::Error },
 
     #[error("ut8 conversion error, key: {key}, source -> {source}")]
-    Ut8Conversion {
-        key: String,
-        source: FromUtf8Error,
-    },
+    Ut8Conversion { key: String, source: FromUtf8Error },
 }
 
 pub type Result<T> = std::result::Result<T, KvError>;

@@ -12,5 +12,7 @@ pub use server::engine::KvsEngine;
 
 pub use server::engine::sled_eng::SledKvsEngine;
 pub use server::KvsServer;
+pub use server::ServerAddr;
+pub use server::AddrError;
 
 pub use client::KvsClient;
