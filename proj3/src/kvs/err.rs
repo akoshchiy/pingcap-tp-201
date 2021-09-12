@@ -35,6 +35,32 @@ pub enum KvError {
 
     #[error("ut8 conversion error, key: {key}, source -> {source}")]
     Ut8Conversion { key: String, source: FromUtf8Error },
+
+    #[error(transparent)]
+    BsonSerialize(bson::ser::Error),
+
+    #[error(transparent)]
+    BsonDeserialize(bson::de::Error),
 }
 
 pub type Result<T> = std::result::Result<T, KvError>;
+
+
+impl From<std::io::Error> for KvError {
+
+    fn from(e: std::io::Error) -> Self {
+        KvError::Io(e)
+    }
+}
+
+impl From<bson::ser::Error> for KvError {
+    fn from(e: bson::ser::Error) -> Self {
+        KvError::BsonSerialize(e)
+    }
+}
+
+impl From<bson::de::Error> for KvError {
+    fn from(e: bson::de::Error) -> Self {
+        KvError::BsonDeserialize(e)
+    }
+}

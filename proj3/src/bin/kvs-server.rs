@@ -1,11 +1,11 @@
 use clap::{load_yaml, App, ArgMatches};
-use proj3::kvs::{KvError, KvStore, KvsEngine, KvsServer, Result, SledKvsEngine, ServerAddr};
+use proj3::kvs::{KvError, KvStore, KvsEngine, KvsServer, Result, SledKvsEngine};
 use sled::Db;
-use std::{env, format};
-use std::net::IpAddr;
+use slog::{info, o, Drain, Logger};
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::str::FromStr;
-use slog::{Drain, Logger, info, o};
+use std::{env, format};
 
 fn main() {
     let log = init_log();
@@ -24,13 +24,11 @@ fn main() {
     let addr = parse_addr(&log, &matches);
     let engine_name = parse_engine(&log, &matches);
 
-    start_server(&engine_name, dir.as_path(), addr)
-        .expect("server start failed");
+    start_server(&engine_name, dir.as_path(), addr).expect("server start failed");
 }
 
-fn parse_addr(log: &Logger, matches: &ArgMatches) -> ServerAddr {
-    let addr_str = matches.value_of("addr")
-        .unwrap_or("127.0.0.1:4000");
+fn parse_addr(log: &Logger, matches: &ArgMatches) -> SocketAddr {
+    let addr_str = matches.value_of("addr").unwrap_or("127.0.0.1:4000");
 
     info!(log, "addr: {}", addr_str);
 
@@ -43,7 +41,7 @@ fn parse_engine(log: &Logger, matches: &ArgMatches) -> String {
     engine.to_string()
 }
 
-fn start_server(engine: &str, root_path: &Path, addr: ServerAddr) -> Result<()> {
+fn start_server(engine: &str, root_path: &Path, addr: SocketAddr) -> Result<()> {
     match engine {
         "kvs" => build_kvs(root_path).and_then(|e| KvsServer::new(e).listen(addr)),
         "sled" => build_sled(root_path).and_then(|e| KvsServer::new(e).listen(addr)),
