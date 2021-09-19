@@ -10,6 +10,7 @@ use crate::kvs::server::engine::KvsEngine;
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use slog::Logger;
 
 const DUPLICATE_COUNT_THRESHOLD: u32 = 1000;
 

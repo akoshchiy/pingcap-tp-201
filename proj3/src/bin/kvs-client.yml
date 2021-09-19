@@ -4,6 +4,8 @@ args:
   - version:
       help: version of kvs
       short: V
+  - addr:
+      help: "IP address, either v4 or v6, and a port number, with the format IP:PORT"
 subcommands:
   - set:
       about: set the key-value with input

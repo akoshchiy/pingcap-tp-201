@@ -4,20 +4,20 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use crate::kvs::net::{read, CommandResult, write};
 use crate::kvs::net::Command;
 use std::ptr::write_bytes;
-use slog::{error, Logger};
+use slog::{error, info, trace, Logger};
 
 pub struct KvsServer<E: KvsEngine> {
     engine: E,
-    // logger: Logger,
+    log: Logger,
 }
 
 impl<E: KvsEngine> KvsServer<E> {
-    pub fn new(engine: E) -> KvsServer<E> {
-        KvsServer { engine }
+    pub fn new(engine: E, log: Logger) -> KvsServer<E> {
+        KvsServer { engine, log }
     }
 
     pub fn listen(&mut self, addr: SocketAddr) -> Result<()> {
-        let listener = TcpListener::bind(addr).unwrap();
+        let listener = TcpListener::bind(addr)?;
 
         for stream in listener.incoming() {
             let res = self.handle_conn(stream?);
@@ -25,7 +25,7 @@ impl<E: KvsEngine> KvsServer<E> {
                 Ok(()) => continue,
                 Err(e) => {
                     let err_str = e.to_string();
-                    // error!(&self.logger, err_str);
+                    error!(&self.log, "error from handle_conn: {}", err_str);
                 }
             }
         }
@@ -34,6 +34,9 @@ impl<E: KvsEngine> KvsServer<E> {
     }
 
     fn handle_conn(&mut self, mut stream: TcpStream) -> Result<()> {
+        let addr = stream.peer_addr()?;
+        info!(self.log, "connection from: {}", addr.ip());
+
         let cmd: Command = read(&mut stream)?;
         match cmd {
             Command::Set { key, val } => self.handle_set(key, val, &mut stream),

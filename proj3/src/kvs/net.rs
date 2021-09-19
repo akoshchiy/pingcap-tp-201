@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 use serde::de::DeserializeOwned;
+use std::fmt::{Display, Formatter};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "cmd")]
@@ -12,12 +13,32 @@ pub(crate) enum Command {
     Remove { key: String },
 }
 
+impl Display for Command {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Command::Get { key } => write!(f, "Get({})", key),
+            Command::Set { key, val } => write!(f, "Set({}, {})", key, val),
+            Command::Remove { key } => write!(f, "Remove({})", key),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "t")]
 pub(crate) enum CommandResult {
     Ok,
     OkVal(String),
     Err(String),
+}
+
+impl Display for CommandResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommandResult::Ok => write!(f, "Ok"),
+            CommandResult::OkVal(val) => write!(f, "OkVal({})", val),
+            CommandResult::Err(err) => write!(f, "Err({})", err),
+        }
+    }
 }
 
 pub(crate) fn read<R: Read, V: DeserializeOwned>(reader: &mut R) -> Result<V> {

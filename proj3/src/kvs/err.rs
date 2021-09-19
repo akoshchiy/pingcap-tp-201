@@ -31,7 +31,10 @@ pub enum KvError {
     KeyNotFound,
 
     #[error("sled error, key: {key}, source -> {source}")]
-    Sled { key: String, source: sled::Error },
+    SledAccess { key: String, source: sled::Error },
+
+    #[error(transparent)]
+    Sled(sled::Error),
 
     #[error("ut8 conversion error, key: {key}, source -> {source}")]
     Ut8Conversion { key: String, source: FromUtf8Error },
@@ -41,13 +44,18 @@ pub enum KvError {
 
     #[error(transparent)]
     BsonDeserialize(bson::de::Error),
+
+    #[error("server error: {msg}")]
+    Server { msg: String },
+
+    #[error("server unexpected result: {val}")]
+    UnexpectedResult { val: String },
 }
 
 pub type Result<T> = std::result::Result<T, KvError>;
 
 
 impl From<std::io::Error> for KvError {
-
     fn from(e: std::io::Error) -> Self {
         KvError::Io(e)
     }

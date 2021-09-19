@@ -1,4 +1,4 @@
-use crate::kvs::err::KvError::{KeyNotFound, Sled, Ut8Conversion};
+use crate::kvs::err::KvError::{KeyNotFound, SledAccess, Ut8Conversion};
 use crate::kvs::KvsEngine;
 use crate::kvs::Result;
 use sled::Db;
@@ -17,7 +17,7 @@ impl KvsEngine for SledKvsEngine {
     fn get(&mut self, key: String) -> Result<Option<String>> {
         let buf_opt = match self.db.get(key.as_bytes()) {
             Ok(res) => res,
-            Err(e) => return Err(Sled { key, source: e }),
+            Err(e) => return Err(SledAccess { key, source: e }),
         };
 
         let res = match buf_opt {
@@ -35,7 +35,7 @@ impl KvsEngine for SledKvsEngine {
         self.db
             .insert(key.as_bytes(), value.as_bytes())
             .map(|_| ())
-            .map_err(|err| Sled { key, source: err })
+            .map_err(|err| SledAccess { key, source: err })
     }
 
     fn remove(&mut self, key: String) -> Result<()> {
@@ -45,7 +45,7 @@ impl KvsEngine for SledKvsEngine {
                 Some(_) => Ok(()),
                 None => Err(KeyNotFound),
             },
-            Err(e) => Err(Sled { key, source: e }),
+            Err(e) => Err(SledAccess { key, source: e }),
         }
     }
 }

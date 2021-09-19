@@ -20,11 +20,10 @@ fn main() {
     }
 
     let dir = env::current_dir().unwrap();
-
     let addr = parse_addr(&log, &matches);
     let engine_name = parse_engine(&log, &matches);
 
-    start_server(&engine_name, dir.as_path(), addr).expect("server start failed");
+    start_server(&log, &engine_name, dir.as_path(), addr).expect("server start failed");
 }
 
 fn parse_addr(log: &Logger, matches: &ArgMatches) -> SocketAddr {
@@ -41,26 +40,28 @@ fn parse_engine(log: &Logger, matches: &ArgMatches) -> String {
     engine.to_string()
 }
 
-fn start_server(engine: &str, root_path: &Path, addr: SocketAddr) -> Result<()> {
+fn start_server(root_log: &Logger, engine: &str, root_path: &Path, addr: SocketAddr) -> Result<()> {
+    let log = root_log.new(o!());
     match engine {
-        "kvs" => build_kvs(root_path).and_then(|e| KvsServer::new(e).listen(addr)),
-        "sled" => build_sled(root_path).and_then(|e| KvsServer::new(e).listen(addr)),
+        "kvs" => build_kvs(root_log, root_path).and_then(|e| KvsServer::new(e, log).listen(addr)),
+        "sled" => build_sled(root_path).and_then(|e| KvsServer::new(e, log).listen(addr)),
         _ => panic!("undefined engine: {}", engine),
     }
 }
 
 fn build_sled(file_path: &Path) -> Result<SledKvsEngine> {
-    sled::open(file_path)
-        // TODO new err type for sled init
-        .map_err(|err| KvError::Sled {
-            key: String::new(),
-            source: err,
-        })
+    let sled_path = file_path.join("sled_data");
+    std::fs::create_dir_all(sled_path.as_path())?;
+    sled::open(sled_path.as_path())
+        .map_err(|err| KvError::Sled(err))
         .map(|db| SledKvsEngine::new(db))
 }
 
-fn build_kvs(file_path: &Path) -> Result<KvStore> {
-    KvStore::open(file_path)
+fn build_kvs(log: &Logger, file_path: &Path) -> Result<KvStore> {
+    let kvs_path = file_path.join("kvs_data");
+    std::fs::create_dir_all(kvs_path.as_path())?;
+    info!(log, "kvs path: {}", kvs_path.display().to_string());
+    KvStore::open(kvs_path.as_path())
 }
 
 fn init_log() -> Logger {
