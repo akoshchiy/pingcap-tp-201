@@ -10,7 +10,7 @@ use std::{env, format};
 fn main() {
     let log = init_log();
 
-    let yaml = load_yaml!("kvs-client.yml");
+    let yaml = load_yaml!("kvs-server.yml");
     let app = App::from(yaml);
     let matches = app.get_matches();
 
@@ -18,6 +18,8 @@ fn main() {
         println!(env!("CARGO_PKG_VERSION"));
         return;
     }
+
+    info!(log, "version: {}", env!("CARGO_PKG_VERSION"));
 
     let dir = env::current_dir().unwrap();
     let addr = parse_addr(&log, &matches);
@@ -50,7 +52,12 @@ fn start_server(root_log: &Logger, engine: &str, root_path: &Path, addr: SocketA
 }
 
 fn build_sled(file_path: &Path) -> Result<SledKvsEngine> {
+    if check_engine_data(file_path, "kvs") {
+        panic!("kvs engine data dir detected");
+    }
+
     let sled_path = file_path.join("sled_data");
+
     std::fs::create_dir_all(sled_path.as_path())?;
     sled::open(sled_path.as_path())
         .map_err(|err| KvError::Sled(err))
@@ -58,7 +65,12 @@ fn build_sled(file_path: &Path) -> Result<SledKvsEngine> {
 }
 
 fn build_kvs(log: &Logger, file_path: &Path) -> Result<KvStore> {
+    if check_engine_data(file_path, "sled") {
+        panic!("sled engine data dir detected");
+    }
+
     let kvs_path = file_path.join("kvs_data");
+
     std::fs::create_dir_all(kvs_path.as_path())?;
     info!(log, "kvs path: {}", kvs_path.display().to_string());
     KvStore::open(kvs_path.as_path())
@@ -69,4 +81,8 @@ fn init_log() -> Logger {
     let drain = slog_term::CompactFormat::new(decorator).build().fuse();
     let drain = slog_async::Async::new(drain).build().fuse();
     slog::Logger::root(drain, o!())
+}
+
+fn check_engine_data(file_path: &Path, engine: &str) -> bool {
+    file_path.join(engine.to_owned() + "_data").as_path().exists()
 }

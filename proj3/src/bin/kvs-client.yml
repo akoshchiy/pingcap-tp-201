@@ -4,8 +4,6 @@ args:
   - version:
       help: version of kvs
       short: V
-  - addr:
-      help: "IP address, either v4 or v6, and a port number, with the format IP:PORT"
 subcommands:
   - set:
       about: set the key-value with input
@@ -18,6 +16,11 @@ subcommands:
             index: 2
             help: value to set
             required: true
+        - addr:
+            about: "IP address, either v4 or v6, and a port number, with the format IP:PORT"
+            value_name: "IP:PORT"
+            long: addr
+            takes_value: true
   - get:
       about: get the value by the key
       args:
@@ -25,6 +28,11 @@ subcommands:
             index: 1
             help: key
             required: true
+        - addr:
+            about: "IP address, either v4 or v6, and a port number, with the format IP:PORT"
+            value_name: "IP:PORT"
+            long: addr
+            takes_value: true
   - rm:
       about: remove value by key
       args:
@@ -32,3 +40,8 @@ subcommands:
             index: 1
             help: key
             required: true
+        - addr:
+            about: "IP address, either v4 or v6, and a port number, with the format IP:PORT"
+            value_name: "IP:PORT"
+            long: addr
+            takes_value: true

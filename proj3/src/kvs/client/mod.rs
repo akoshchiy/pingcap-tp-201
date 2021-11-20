@@ -12,7 +12,6 @@ pub struct KvsClient {
 
 impl KvsClient {
     pub fn connect(log: &Logger, addr: SocketAddr) -> Result<KvsClient> {
-        ;
         let stream = TcpStream::connect(addr)?;
         Ok(
             KvsClient {

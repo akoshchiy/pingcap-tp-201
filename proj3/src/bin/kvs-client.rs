@@ -1,4 +1,4 @@
-use clap::{load_yaml, App, ArgMatches};
+use clap::{load_yaml, App, ArgMatches, AppSettings};
 
 use proj3::kvs::{KvError, KvStore, KvsClient};
 use std::borrow::Borrow;
@@ -12,7 +12,10 @@ use std::net::SocketAddr;
 fn main() {
     let log = init_log();
     let yaml = load_yaml!("kvs-client.yml");
-    let app = App::from(yaml);
+
+    let app = App::from(yaml)
+        .setting(AppSettings::ArgRequiredElseHelp);
+
     let matches = app.get_matches();
 
     if matches.is_present("version") {
@@ -20,10 +23,9 @@ fn main() {
         return;
     }
 
-    let addr = parse_addr(&log, &matches);
-
     match matches.subcommand() {
         Some(("get", args)) => {
+            let addr = parse_addr(&log, &args);
             let key = args.value_of("key").unwrap();
             let result = KvsClient::connect(&log, addr)
                 .unwrap()
@@ -33,6 +35,7 @@ fn main() {
             println!("{}", result);
         }
         Some(("set", args)) => {
+            let addr = parse_addr(&log, &args);
             let key = args.value_of("key").unwrap();
             let value = args.value_of("value").unwrap();
             KvsClient::connect(&log, addr)
@@ -41,16 +44,18 @@ fn main() {
                 .unwrap();
         }
         Some(("rm", args)) => {
+            let addr = parse_addr(&log, &args);
             let key = args.value_of("key").unwrap();
             let mut client = KvsClient::connect(&log, addr)
                 .unwrap();
             match client.remove(key.to_string()) {
                 Ok(_) => return,
                 Err(err) => {
-                    match err {
-                        KvError::KeyNotFound => println!("Key not found"),
-                        _ => println!("{:?}", err),
-                    }
+                    eprintln!("{:?}", err);
+                    // match err {
+                    //     KvError::KeyNotFound => println!("Key not found"),
+                    //     _ => eprintln!("{:?}", err),
+                    // }
                     exit(1);
                 }
             };

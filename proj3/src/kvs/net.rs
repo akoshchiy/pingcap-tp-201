@@ -24,7 +24,7 @@ impl Display for Command {
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(tag = "t")]
+#[serde(tag = "t", content = "__field0")]
 pub(crate) enum CommandResult {
     Ok,
     OkVal(String),
