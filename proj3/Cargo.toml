@@ -23,3 +23,8 @@ predicates = "1.0.0"
 tempfile = "3.0.7"
 criterion = "0.3"
 rand = "0.6.5"
+
+
+[[bench]]
+name = "engine_bench"
+harness = false

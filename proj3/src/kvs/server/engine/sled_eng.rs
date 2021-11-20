@@ -19,6 +19,12 @@ impl SledKvsEngine {
     }
 }
 
+impl Drop for SledKvsEngine {
+    fn drop(&mut self) {
+        self.flush();
+    }
+}
+
 impl KvsEngine for SledKvsEngine {
     fn get(&mut self, key: String) -> Result<Option<String>> {
         let buf_opt = match self.db.get(key.as_bytes()) {
