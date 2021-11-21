@@ -1,0 +1,15 @@
+name: kvs
+version: "0.1.0"
+args:
+  - version:
+      help: "Print the version"
+      short: V
+  - addr:
+      about: "IP address, either v4 or v6, and a port number, with the format IP:PORT"
+      value_name: "IP:PORT"
+      long: addr
+  - engine:
+      about: 'must be either "kvs", in which case the built-in engine is used, or "sled", in which case sled is used.'
+      long: engine
+      value_name: "kvs|sled"
+      takes_value: true

@@ -93,58 +93,67 @@ impl KvStore {
     }
 }
 
+impl Clone for KvStore {
+    fn clone(&self) -> Self {
+        todo!()
+    }
+}
+
 impl KvsEngine for KvStore {
-    fn get(&mut self, key: String) -> Result<Option<String>> {
-        let entry = match self.mem_table.get(&key) {
-            Some(entry) => entry,
-            None => return Ok(None),
-        };
-        read_entry(&mut self.readers, *entry)
+    fn get(&self, key: String) -> Result<Option<String>> {
+        // let entry = match self.mem_table.get(&key) {
+        //     Some(entry) => entry,
+        //     None => return Ok(None),
+        // };
+        // read_entry(&mut self.readers, *entry)
+        unimplemented!()
     }
 
-    fn set(&mut self, key: String, value: String) -> Result<()> {
-        let offset = self.writer.1.pos();
-
-        self.writer.1.write(LogEntry::Set {
-            key: key.clone(),
-            val: value,
-        })?;
-
-        if self.mem_table.contains_key(&key) {
-            self.duplicate_count += 1;
-        }
-
-        self.mem_table.insert(
-            key,
-            TableEntry {
-                file_id: self.writer.0,
-                offset,
-            },
-        );
-
-        if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
-            self.compact()?;
-        }
-
-        Ok(())
+    fn set(&self, key: String, value: String) -> Result<()> {
+        // let offset = self.writer.1.pos();
+        //
+        // self.writer.1.write(LogEntry::Set {
+        //     key: key.clone(),
+        //     val: value,
+        // })?;
+        //
+        // if self.mem_table.contains_key(&key) {
+        //     self.duplicate_count += 1;
+        // }
+        //
+        // self.mem_table.insert(
+        //     key,
+        //     TableEntry {
+        //         file_id: self.writer.0,
+        //         offset,
+        //     },
+        // );
+        //
+        // if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+        //     self.compact()?;
+        // }
+        //
+        // Ok(())
+        unimplemented!()
     }
 
-    fn remove(&mut self, key: String) -> Result<()> {
-        self.writer.1.write(LogEntry::Remove { key: key.clone() })?;
-
-        self.duplicate_count += 1;
-
-        let res = self
-            .mem_table
-            .remove(&key)
-            .map(|e| ())
-            .ok_or(KvError::KeyNotFound);
-
-        if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
-            self.compact()?;
-        }
-
-        res
+    fn remove(&self, key: String) -> Result<()> {
+        // self.writer.1.write(LogEntry::Remove { key: key.clone() })?;
+        //
+        // self.duplicate_count += 1;
+        //
+        // let res = self
+        //     .mem_table
+        //     .remove(&key)
+        //     .map(|e| ())
+        //     .ok_or(KvError::KeyNotFound);
+        //
+        // if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+        //     self.compact()?;
+        // }
+        //
+        // res
+        unimplemented!()
     }
 }
 

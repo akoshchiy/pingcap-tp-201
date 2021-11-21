@@ -1,6 +1,6 @@
 use clap::{load_yaml, App, AppSettings, ArgMatches};
 
-use proj3::kvs::{KvError, KvStore, KvsClient};
+use proj4::kvs::{KvError, KvStore, KvsClient};
 use slog::{info, o, Drain, Logger};
 use std::borrow::Borrow;
 use std::env;
