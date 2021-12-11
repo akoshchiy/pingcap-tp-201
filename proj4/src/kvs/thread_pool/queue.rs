@@ -64,7 +64,6 @@ fn thread_loop(receiver: Receiver<QueueMessage>) {
                 match msg {
                     QueueMessage::Job(job) => {
                         job();
-                        println!("job complete");
                     }
                     QueueMessage::Stop => {
                         return;
