@@ -50,6 +50,9 @@ pub enum KvError {
 
     #[error("server unexpected result: {val}")]
     UnexpectedResult { val: String },
+
+    #[error("pool build error: {msg}")]
+    PoolBuild { msg: String }
 }
 
 pub type Result<T> = std::result::Result<T, KvError>;
