@@ -1,5 +1,5 @@
 use clap::{load_yaml, App, ArgMatches};
-use proj4::kvs::thread_pool::{NaiveThreadPool, RayonThreadPool, ThreadPool};
+use proj4::kvs::thread_pool::{NaiveThreadPool, RayonThreadPool, SharedQueueThreadPool, ThreadPool};
 use proj4::kvs::{KvError, KvStore, KvsEngine, KvsServer, Result, SledKvsEngine};
 use sled::Db;
 use slog::{info, o, Drain, Logger};
@@ -45,7 +45,7 @@ fn parse_engine(log: &Logger, matches: &ArgMatches) -> String {
 
 fn start_server(root_log: &Logger, engine: &str, root_path: &Path, addr: SocketAddr) -> Result<()> {
     let log = root_log.new(o!());
-    let pool = RayonThreadPool::new(10).unwrap();
+    let pool = SharedQueueThreadPool::new(10).unwrap();
     match engine {
         "kvs" => {
             build_kvs(root_log, root_path).and_then(|e| KvsServer::new(e, pool, log).listen(addr))
