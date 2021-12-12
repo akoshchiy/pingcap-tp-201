@@ -1,4 +1,5 @@
 use clap::{load_yaml, App, ArgMatches};
+use proj4::kvs::thread_pool::{NaiveThreadPool, RayonThreadPool, ThreadPool};
 use proj4::kvs::{KvError, KvStore, KvsEngine, KvsServer, Result, SledKvsEngine};
 use sled::Db;
 use slog::{info, o, Drain, Logger};
@@ -6,7 +7,6 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::str::FromStr;
 use std::{env, format};
-use proj4::kvs::thread_pool::{ThreadPool, NaiveThreadPool, RayonThreadPool};
 
 fn main() {
     let log = init_log();
@@ -47,10 +47,10 @@ fn start_server(root_log: &Logger, engine: &str, root_path: &Path, addr: SocketA
     let log = root_log.new(o!());
     let pool = RayonThreadPool::new(10).unwrap();
     match engine {
-        "kvs" => build_kvs(root_log, root_path)
-            .and_then(|e| KvsServer::new(e, pool, log).listen(addr)),
-        "sled" => build_sled(root_path)
-            .and_then(|e| KvsServer::new(e, pool, log).listen(addr)),
+        "kvs" => {
+            build_kvs(root_log, root_path).and_then(|e| KvsServer::new(e, pool, log).listen(addr))
+        }
+        "sled" => build_sled(root_path).and_then(|e| KvsServer::new(e, pool, log).listen(addr)),
         _ => panic!("undefined engine: {}", engine),
     }
 }

@@ -1,13 +1,12 @@
 use crate::kvs::net::Command;
 use crate::kvs::net::{read, write, CommandResult};
+use crate::kvs::server::conn_handler::ConnectionHandler;
+use crate::kvs::thread_pool::ThreadPool;
 use crate::kvs::{KvsEngine, Result};
-use slog::{error, info, trace, Logger, o};
+use slog::{error, info, o, trace, Logger};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::ptr::write_bytes;
-use crate::kvs::server::conn_handler::ConnectionHandler;
-use crate::kvs::thread_pool::ThreadPool;
-
 
 pub struct KvsServer<E: KvsEngine, P: ThreadPool> {
     engine: E,

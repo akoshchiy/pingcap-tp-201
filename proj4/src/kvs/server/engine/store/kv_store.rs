@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use crate::kvs::err::Result;
 use std::collections::{BTreeMap, HashMap};
 
@@ -9,16 +10,27 @@ use crate::kvs::server::engine::store::io::{LogEntry, LogReader, LogWriter};
 use crate::kvs::server::engine::KvsEngine;
 use slog::Logger;
 use std::fs::{File, OpenOptions};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicU32;
+use crossbeam_skiplist::SkipMap;
 
 const DUPLICATE_COUNT_THRESHOLD: u32 = 1000;
 
 pub struct KvStore {
     root_path: PathBuf,
-    mem_table: HashMap<String, TableEntry>,
-    readers: BTreeMap<FileId, LogReader<File>>,
-    writer: (FileId, LogWriter<File>),
+    mem_table: Arc<SkipMap<String, TableEntry>>,
+    readers: RefCell<BTreeMap<FileId, LogReader<File>>>,
+    writer: Arc<SharedKvStoreWriter>,
+}
+
+struct SharedKvStoreWriter(Mutex<KvStoreWriter>);
+
+struct KvStoreWriter {
+    current_file: FileId,
+    writer: LogWriter<File>,
     duplicate_count: u32,
 }
 
@@ -39,51 +51,50 @@ impl KvStore {
 
         Ok(KvStore {
             root_path: path,
-            mem_table: table,
-            readers,
-            writer,
-            duplicate_count: 0,
+            mem_table: Arc::new(table),
+            readers: RefCell::new(readers),
+            writer: Arc::new(SharedKvStoreWriter(Mutex::new(writer))),
         })
     }
 
-    fn compact(&mut self) -> Result<()> {
-        let file_id = FileId::Compact(self.writer.0.version());
+    fn compact(&self, writer: &mut KvStoreWriter) -> Result<()> {
+        let file_id = FileId::Compact(writer.current_file.version());
         self.write_compact_file(&file_id);
 
         let mut reader = open_reader(&file_id, &self.root_path)?;
 
-        fill_table_from(&mut self.mem_table, file_id, &mut reader)?;
+        fill_table_from(&self.mem_table, file_id, &mut reader)?;
 
-        for kv in &self.readers {
+        for kv in self.readers.borrow().deref() {
             remove_file(kv.0, &self.root_path);
         }
 
-        self.readers.clear();
-        self.readers.insert(file_id, reader);
+        let mut readers = self.readers.borrow_mut();
+
+        readers.clear();
+        readers.insert(file_id, reader);
 
         let append_file_id = FileId::Append(file_id.version() + 1);
 
-        let writer = open_writer(&append_file_id, &self.root_path)?;
-        self.writer = (append_file_id, writer);
+        let log_writer = open_writer(&append_file_id, &self.root_path)?;
 
-        let append_reader = open_reader(&append_file_id, &self.root_path)?;
-        self.readers.insert(append_file_id, append_reader);
-
-        self.duplicate_count = 0;
+        writer.writer = log_writer;
+        writer.current_file = append_file_id;
+        writer.duplicate_count = 0;
 
         Ok(())
     }
 
-    fn write_compact_file(&mut self, file_id: &FileId) -> Result<()> {
+    fn write_compact_file(&self, file_id: &FileId) -> Result<()> {
         let mut writer = open_writer(file_id, self.root_path.as_path())?;
 
-        for pair in &mut self.mem_table {
-            let val = match read_entry(&mut self.readers, *pair.1)? {
+        for pair in self.mem_table.iter() {
+            let val = match read_entry(&self.root_path, &self.readers, *pair.value())? {
                 Some(val) => val,
                 None => continue,
             };
             let entry = LogEntry::Set {
-                key: (*pair.0).clone(),
+                key: (*pair.key()).clone(),
                 val,
             };
             writer.write(entry);
@@ -95,76 +106,93 @@ impl KvStore {
 
 impl Clone for KvStore {
     fn clone(&self) -> Self {
-        todo!()
+        KvStore {
+            root_path: self.root_path.clone(),
+            mem_table: self.mem_table.clone(),
+            readers: RefCell::new(BTreeMap::new()),
+            writer: self.writer.clone(),
+        }
     }
 }
 
 impl KvsEngine for KvStore {
     fn get(&self, key: String) -> Result<Option<String>> {
-        // let entry = match self.mem_table.get(&key) {
-        //     Some(entry) => entry,
-        //     None => return Ok(None),
-        // };
-        // read_entry(&mut self.readers, *entry)
-        unimplemented!()
+        let entry = match self.mem_table.get(&key) {
+            Some(entry) => entry,
+            None => return Ok(None),
+        };
+        read_entry(&self.root_path, &self.readers, *entry.value())
     }
 
     fn set(&self, key: String, value: String) -> Result<()> {
-        // let offset = self.writer.1.pos();
-        //
-        // self.writer.1.write(LogEntry::Set {
-        //     key: key.clone(),
-        //     val: value,
-        // })?;
-        //
-        // if self.mem_table.contains_key(&key) {
-        //     self.duplicate_count += 1;
-        // }
-        //
-        // self.mem_table.insert(
-        //     key,
-        //     TableEntry {
-        //         file_id: self.writer.0,
-        //         offset,
-        //     },
-        // );
-        //
-        // if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
-        //     self.compact()?;
-        // }
-        //
-        // Ok(())
-        unimplemented!()
+        let mut writer = self.writer
+            .0
+            .lock()
+            .unwrap();
+
+        let offset = writer.writer.pos();
+
+        writer.writer.write(LogEntry::Set {
+            key: key.clone(),
+            val: value,
+        })?;
+
+        if self.mem_table.contains_key(&key) {
+            writer.duplicate_count += 1;
+        }
+
+        self.mem_table.insert(
+            key,
+            TableEntry {
+                file_id: writer.current_file,
+                offset,
+            },
+        );
+
+        if writer.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+            self.compact(&mut writer)?;
+        }
+
+        Ok(())
     }
 
     fn remove(&self, key: String) -> Result<()> {
-        // self.writer.1.write(LogEntry::Remove { key: key.clone() })?;
-        //
-        // self.duplicate_count += 1;
-        //
-        // let res = self
-        //     .mem_table
-        //     .remove(&key)
-        //     .map(|e| ())
-        //     .ok_or(KvError::KeyNotFound);
-        //
-        // if self.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
-        //     self.compact()?;
-        // }
-        //
-        // res
-        unimplemented!()
+        let mut writer = self.writer
+            .0
+            .lock()
+            .unwrap();
+
+        writer.writer.write(LogEntry::Remove { key: key.clone() })?;
+
+        writer.duplicate_count += 1;
+
+        let res = self
+            .mem_table
+            .remove(&key)
+            .map(|e| ())
+            .ok_or(KvError::KeyNotFound);
+
+        if writer.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+            self.compact(&mut writer)?;
+        }
+
+        res
     }
 }
 
 fn read_entry(
-    readers: &mut BTreeMap<FileId, LogReader<File>>,
+    root: &Path,
+    readers_cell: &RefCell<BTreeMap<FileId, LogReader<File>>>,
     entry: TableEntry,
 ) -> Result<Option<String>> {
-    let mut reader = match readers.get_mut(&entry.file_id) {
-        Some(reader) => reader,
-        None => return Ok(None),
-    };
+    let mut readers = readers_cell.borrow_mut();
+
+    if !readers.contains_key(&entry.file_id) {
+        let reader = open_reader(&entry.file_id, root)?;
+        readers.insert(entry.file_id, reader);
+    }
+
+    let mut reader = readers.get_mut(&entry.file_id).unwrap();
 
     reader
         .read_pos(entry.offset)
@@ -176,16 +204,16 @@ fn read_entry(
 
 fn prepare_table(
     readers: &mut BTreeMap<FileId, LogReader<File>>,
-) -> Result<HashMap<String, TableEntry>> {
-    let mut table = HashMap::new();
+) -> Result<SkipMap<String, TableEntry>> {
+    let table = SkipMap::new();
     for pair in readers {
-        fill_table_from(&mut table, *pair.0, pair.1)?;
+        fill_table_from(&table, *pair.0, pair.1)?;
     }
     Ok(table)
 }
 
 fn fill_table_from(
-    table: &mut HashMap<String, TableEntry>,
+    table: &SkipMap<String, TableEntry>,
     file_id: FileId,
     reader: &mut LogReader<File>,
 ) -> Result<()> {
@@ -240,13 +268,19 @@ fn prepare_readers(
     Ok(readers)
 }
 
-fn prepare_writer(extract: &FileExtract, path: &Path) -> Result<(FileId, LogWriter<File>)> {
+fn prepare_writer(extract: &FileExtract, path: &Path) -> Result<KvStoreWriter> {
     let file_id = extract
         .append_files
         .get(extract.append_files.len() - 1)
         .unwrap();
 
-    open_writer(file_id, path).map(|w| (*file_id, w))
+    open_writer(file_id, path).map(|w| {
+        KvStoreWriter {
+            current_file: *file_id,
+            writer: w,
+            duplicate_count: 0,
+        }
+    })
 }
 
 fn open_reader(file_id: &FileId, root_path: &Path) -> Result<LogReader<File>> {

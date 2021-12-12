@@ -1,8 +1,8 @@
-use std::net::TcpStream;
-use slog::{info, Logger};
+use crate::kvs::net::{read, write, Command, CommandResult};
 use crate::kvs::KvsEngine;
-use crate::kvs::net::{Command, CommandResult, read, write};
 use crate::kvs::Result;
+use slog::{info, Logger};
+use std::net::TcpStream;
 
 pub struct ConnectionHandler<E: KvsEngine> {
     engine: E,

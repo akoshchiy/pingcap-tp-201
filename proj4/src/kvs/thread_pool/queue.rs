@@ -1,10 +1,10 @@
+use crate::kvs::thread_pool::ThreadPool;
+use crate::kvs::Result;
+use crossbeam::channel::{bounded, unbounded, Receiver, Sender};
+use slog::Logger;
 use std::panic::catch_unwind;
 use std::thread;
 use std::thread::JoinHandle;
-use crossbeam::channel::{bounded, Receiver, Sender, unbounded};
-use slog::Logger;
-use crate::kvs::Result;
-use crate::kvs::thread_pool::ThreadPool;
 
 const QUEUE_SIZE: usize = 10;
 
@@ -16,7 +16,9 @@ pub struct SharedQueueThreadPool {
 
 impl ThreadPool for SharedQueueThreadPool {
     fn new(threads: u32) -> Result<Self>
-        where Self: Sized {
+    where
+        Self: Sized,
+    {
         let (sender, receiver) = unbounded();
 
         let mut join_handles = Vec::with_capacity(threads as usize);
@@ -27,14 +29,18 @@ impl ThreadPool for SharedQueueThreadPool {
                 thread_loop(thread_receiver);
             });
             join_handles.push(join_handle);
-        };
+        }
 
-        Ok(SharedQueueThreadPool { thread_count: threads as usize, sender, join_handles })
+        Ok(SharedQueueThreadPool {
+            thread_count: threads as usize,
+            sender,
+            join_handles,
+        })
     }
 
     fn spawn<F>(&self, job: F)
-        where
-            F: FnOnce() + Send + 'static,
+    where
+        F: FnOnce() + Send + 'static,
     {
         self.sender.send(QueueMessage::Job(Box::new(job)));
     }
@@ -58,18 +64,16 @@ enum QueueMessage {
 
 fn thread_loop(receiver: Receiver<QueueMessage>) {
     loop {
-        let res = catch_unwind(|| {
-            loop {
-                let msg = receiver.recv().unwrap();
-                match msg {
-                    QueueMessage::Job(job) => {
-                        job();
-                    }
-                    QueueMessage::Stop => {
-                        return;
-                    }
-                };
-            }
+        let res = catch_unwind(|| loop {
+            let msg = receiver.recv().unwrap();
+            match msg {
+                QueueMessage::Job(job) => {
+                    job();
+                }
+                QueueMessage::Stop => {
+                    return;
+                }
+            };
         });
 
         if res.is_ok() {
