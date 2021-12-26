@@ -11,6 +11,7 @@ use crate::kvs::server::engine::KvsEngine;
 use crossbeam_skiplist::SkipMap;
 use slog::Logger;
 use std::fs::{File, OpenOptions};
+use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::exit;
@@ -41,7 +42,7 @@ struct TableEntry {
 }
 
 impl KvStore {
-    pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
+    pub fn open(path: impl Into<PathBuf>, thread_size: usize) -> Result<KvStore> {
         let path = path.into();
 
         let file_extract = extract_files(path.as_path())?;
@@ -116,61 +117,64 @@ impl Clone for KvStore {
 }
 
 impl KvsEngine for KvStore {
-    fn get(&self, key: String) -> Result<Option<String>> {
-        let entry = match self.mem_table.get(&key) {
-            Some(entry) => entry,
-            None => return Ok(None),
-        };
-        read_entry(&self.root_path, &self.readers, *entry.value())
+    fn get(&self, key: String) -> Box<dyn Future<Output=Result<Option<String>>>> {
+        // let entry = match self.mem_table.get(&key) {
+        //     Some(entry) => entry,
+        //     None => return Ok(None),
+        // };
+        // read_entry(&self.root_path, &self.readers, *entry.value())
+        unimplemented!()
     }
 
-    fn set(&self, key: String, value: String) -> Result<()> {
-        let mut writer = self.writer.0.lock().unwrap();
-
-        let offset = writer.writer.pos();
-
-        writer.writer.write(LogEntry::Set {
-            key: key.clone(),
-            val: value,
-        })?;
-
-        if self.mem_table.contains_key(&key) {
-            writer.duplicate_count += 1;
-        }
-
-        self.mem_table.insert(
-            key,
-            TableEntry {
-                file_id: writer.current_file,
-                offset,
-            },
-        );
-
-        if writer.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
-            self.compact(&mut writer)?;
-        }
-
-        Ok(())
+    fn set(&self, key: String, value: String) -> Box<dyn Future<Output=Result<()>>> {
+        // let mut writer = self.writer.0.lock().unwrap();
+        //
+        // let offset = writer.writer.pos();
+        //
+        // writer.writer.write(LogEntry::Set {
+        //     key: key.clone(),
+        //     val: value,
+        // })?;
+        //
+        // if self.mem_table.contains_key(&key) {
+        //     writer.duplicate_count += 1;
+        // }
+        //
+        // self.mem_table.insert(
+        //     key,
+        //     TableEntry {
+        //         file_id: writer.current_file,
+        //         offset,
+        //     },
+        // );
+        //
+        // if writer.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+        //     self.compact(&mut writer)?;
+        // }
+        //
+        // Ok(())
+        unimplemented!()
     }
 
-    fn remove(&self, key: String) -> Result<()> {
-        let mut writer = self.writer.0.lock().unwrap();
-
-        writer.writer.write(LogEntry::Remove { key: key.clone() })?;
-
-        writer.duplicate_count += 1;
-
-        let res = self
-            .mem_table
-            .remove(&key)
-            .map(|e| ())
-            .ok_or(KvError::KeyNotFound);
-
-        if writer.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
-            self.compact(&mut writer)?;
-        }
-
-        res
+    fn remove(&self, key: String) -> Box<dyn Future<Output=Result<()>>> {
+        // let mut writer = self.writer.0.lock().unwrap();
+        //
+        // writer.writer.write(LogEntry::Remove { key: key.clone() })?;
+        //
+        // writer.duplicate_count += 1;
+        //
+        // let res = self
+        //     .mem_table
+        //     .remove(&key)
+        //     .map(|e| ())
+        //     .ok_or(KvError::KeyNotFound);
+        //
+        // if writer.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
+        //     self.compact(&mut writer)?;
+        // }
+        //
+        // res
+        unimplemented!()
     }
 }
 
@@ -315,7 +319,7 @@ mod tests {
     #[test]
     fn test_get_non_existent_key() {
         let temp_dir = TempDir::new().unwrap();
-        let mut store = KvStore::open(temp_dir.into_path()).unwrap();
+        let mut store = KvStore::open(temp_dir.into_path(), 1).unwrap();
         let result = store.get("key1".to_owned()).unwrap();
         assert_eq!(result.is_none(), true);
     }

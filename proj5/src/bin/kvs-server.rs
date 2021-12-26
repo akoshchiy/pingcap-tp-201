@@ -1,8 +1,8 @@
 use clap::{load_yaml, App, ArgMatches};
-use proj4::kvs::thread_pool::{
+use proj5::kvs::thread_pool::{
     NaiveThreadPool, RayonThreadPool, SharedQueueThreadPool, ThreadPool,
 };
-use proj4::kvs::{KvError, KvStore, KvsEngine, KvsServer, Result, SledKvsEngine};
+use proj5::kvs::{KvError, KvStore, KvsEngine, KvsServer, Result, SledKvsEngine};
 use sled::Db;
 use slog::{info, o, Drain, Logger};
 use std::net::{IpAddr, SocketAddr};
@@ -79,7 +79,7 @@ fn build_kvs(log: &Logger, file_path: &Path) -> Result<KvStore> {
 
     std::fs::create_dir_all(kvs_path.as_path())?;
     info!(log, "kvs path: {}", kvs_path.display().to_string());
-    KvStore::open(kvs_path.as_path())
+    KvStore::open(kvs_path.as_path(), 1)
 }
 
 fn init_log() -> Logger {
