@@ -3,6 +3,7 @@ use std::error::Error;
 use std::str::Utf8Error;
 use std::string::FromUtf8Error;
 use thiserror::Error;
+use tokio::sync::oneshot::error::RecvError;
 
 #[derive(Error, Debug)]
 pub enum KvError {
@@ -53,6 +54,9 @@ pub enum KvError {
 
     #[error("pool build error: {msg}")]
     PoolBuild { msg: String },
+
+    #[error(transparent)]
+    OneshotRecv(RecvError),
 }
 
 pub type Result<T> = std::result::Result<T, KvError>;

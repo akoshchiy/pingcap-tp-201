@@ -1,9 +1,13 @@
-use futures::{future, TryFutureExt};
+use std::future::Future;
+use std::pin::Pin;
+use futures::{future, join, TryFutureExt};
+use futures::future::join_all;
 use proj5::kvs::thread_pool::RayonThreadPool;
-use proj5::kvs::{KvStore, KvsEngine, KvsError, Result};
+use proj5::kvs::{KvStore, KvsEngine, KvError, Result};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 use walkdir::WalkDir;
+use crate::future::{BoxFuture, FutureExt};
 
 // Should get previously stored value
 #[test]
@@ -159,17 +163,20 @@ fn concurrent_set() -> Result<()> {
     // concurrent set in 8 threads
     let store = KvStore::<RayonThreadPool>::open(temp_dir.path(), 8)?;
     let runtime = Runtime::new()?;
-    let executor = runtime.executor();
-    runtime.block_on_all(future::lazy(move || {
+
+    runtime.block_on(async move {
+        let mut futures = Vec::with_capacity(10000);
         for i in 0..10000 {
-            executor.spawn(
-                store
-                    .set(format!("key{}", i), format!("value{}", i))
-                    .map_err(|_| ()),
-            );
+            // let store1 = store
+            //     .clone();
+
+          futures.push(
+              store.set(format!("key{}", i), format!("value{}", i))
+              .map_err(|_| ())
+          );
         }
-        future::ok::<(), KvsError>(())
-    }))?;
+        join_all(futures).await
+    });
 
     // We only check concurrent set in this test, so we check sequentially here
     let store = KvStore::<RayonThreadPool>::open(temp_dir.path(), 1)?;
@@ -196,44 +203,64 @@ fn concurrent_get() -> Result<()> {
     }
 
     let runtime = Runtime::new()?;
-    let executor = runtime.executor();
-    runtime.block_on_all(future::lazy(move || {
+
+    runtime.block_on(async move {
+        let mut futures = Vec::with_capacity(10000);
+
         for thread_id in 0..100 {
             for i in 0..100 {
                 let key_id = (i + thread_id) % 100;
-                executor.spawn(
+                futures.push(
                     store
                         .get(format!("key{}", key_id))
                         .map(move |res| {
-                            assert_eq!(res, Some(format!("value{}", key_id)));
+                            res.map(|val| {
+                                assert_eq!(val, Some(format!("value{}", key_id)));
+                            })
                         })
-                        .map_err(|_| ()),
                 );
             }
         }
-        future::ok::<(), KvsError>(())
-    }))?;
+
+        join_all(futures).await
+    });
 
     // reload from disk and test again
     let store = KvStore::<RayonThreadPool>::open(temp_dir.path(), 8)?;
     let runtime = Runtime::new()?;
-    let executor = runtime.executor();
-    runtime.block_on_all(future::lazy(move || {
+
+    runtime.block_on(async move {
+        let mut futures = Vec::with_capacity(10000);
+
         for thread_id in 0..100 {
             for i in 0..100 {
                 let key_id = (i + thread_id) % 100;
-                executor.spawn(
+                futures.push(
                     store
                         .get(format!("key{}", key_id))
                         .map(move |res| {
-                            assert_eq!(res, Some(format!("value{}", key_id)));
+                            res.map(|val| {
+                                assert_eq!(val, Some(format!("value{}", key_id)));
+                            })
                         })
-                        .map_err(|_| ()),
                 );
             }
         }
-        future::ok::<(), KvsError>(())
-    }))?;
+
+        join_all(futures).await
+    });
 
     Ok(())
+}
+
+trait Wait {
+    fn wait(self) -> <Self as futures::Future>::Output
+        where Self: Sized,
+              Self: futures::Future {
+        futures::executor::block_on(self)
+    }
+}
+
+impl<'a, T> Wait for BoxFuture<'a, T>
+{
 }

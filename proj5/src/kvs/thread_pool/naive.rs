@@ -1,6 +1,7 @@
 use crate::kvs::thread_pool::ThreadPool;
 use std::thread;
 
+#[derive(Clone)]
 pub struct NaiveThreadPool {}
 
 impl ThreadPool for NaiveThreadPool {

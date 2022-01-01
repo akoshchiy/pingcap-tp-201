@@ -8,9 +8,9 @@ use std::thread::JoinHandle;
 
 const QUEUE_SIZE: usize = 10;
 
+#[derive(Clone)]
 pub struct SharedQueueThreadPool {
     sender: Sender<QueueMessage>,
-    join_handles: Vec<JoinHandle<()>>,
     thread_count: usize,
 }
 
@@ -21,20 +21,16 @@ impl ThreadPool for SharedQueueThreadPool {
     {
         let (sender, receiver) = unbounded();
 
-        let mut join_handles = Vec::with_capacity(threads as usize);
-
         for _ in 0..threads {
             let thread_receiver = receiver.clone();
-            let join_handle = thread::spawn(move || {
+            thread::spawn(move || {
                 thread_loop(thread_receiver);
             });
-            join_handles.push(join_handle);
         }
 
         Ok(SharedQueueThreadPool {
             thread_count: threads as usize,
             sender,
-            join_handles,
         })
     }
 
@@ -50,9 +46,6 @@ impl Drop for SharedQueueThreadPool {
     fn drop(&mut self) {
         for _ in 0..self.thread_count {
             self.sender.send(QueueMessage::Stop);
-        }
-        while let Some(cur_thread) = self.join_handles.pop() {
-            cur_thread.join();
         }
     }
 }
