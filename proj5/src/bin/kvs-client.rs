@@ -8,6 +8,7 @@ use std::error::Error;
 use std::fs::File;
 use std::net::SocketAddr;
 use std::process::exit;
+use tokio::runtime::Builder;
 
 fn main() {
     let log = init_log();
@@ -22,41 +23,55 @@ fn main() {
         return;
     }
 
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
     match matches.subcommand() {
         Some(("get", args)) => {
             let addr = parse_addr(&log, &args);
             let key = args.value_of("key").unwrap();
-            let result = KvsClient::connect(&log, addr)
-                .unwrap()
-                .get(key.to_string())
-                .unwrap()
-                .unwrap_or("Key not found".to_string());
-            println!("{}", result);
+
+            runtime.block_on(async move {
+                let result = KvsClient::connect(&log, addr)
+                    .await
+                    .unwrap()
+                    .get(key.to_string())
+                    .await
+                    .unwrap()
+                    .unwrap_or("Key not found".to_string());
+                println!("{}", result);
+            });
         }
         Some(("set", args)) => {
             let addr = parse_addr(&log, &args);
             let key = args.value_of("key").unwrap();
             let value = args.value_of("value").unwrap();
-            KvsClient::connect(&log, addr)
-                .unwrap()
-                .set(key.to_string(), value.to_string())
-                .unwrap();
+
+            runtime.block_on(async move {
+                KvsClient::connect(&log, addr)
+                    .await
+                    .unwrap()
+                    .set(key.to_string(), value.to_string())
+                    .await
+                    .unwrap();
+            });
         }
         Some(("rm", args)) => {
             let addr = parse_addr(&log, &args);
             let key = args.value_of("key").unwrap();
-            let mut client = KvsClient::connect(&log, addr).unwrap();
-            match client.remove(key.to_string()) {
-                Ok(_) => return,
-                Err(err) => {
-                    eprintln!("{:?}", err);
-                    // match err {
-                    //     KvError::KeyNotFound => println!("Key not found"),
-                    //     _ => eprintln!("{:?}", err),
-                    // }
-                    exit(1);
-                }
-            };
+
+            runtime.block_on(async move {
+                let mut client = KvsClient::connect(&log, addr).await.unwrap();
+                match client.remove(key.to_string()).await {
+                    Ok(_) => exit(0),
+                    Err(err) => {
+                        eprintln!("{:?}", err);
+                        exit(1);
+                    }
+                };
+            });
         }
         _ => {
             unreachable!();

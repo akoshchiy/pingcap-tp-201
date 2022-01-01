@@ -22,7 +22,6 @@ impl<E: KvsEngine> KvsServer<E> {
 
     pub async fn listen(&self, addr: SocketAddr) -> Result<()> {
         let listener = TcpListener::bind(addr).await?;
-
         loop {
             let (stream, _) = listener.accept().await?;
 
@@ -34,23 +33,5 @@ impl<E: KvsEngine> KvsServer<E> {
                 handler.handle(stream);
             });
         }
-
-        // for stream in listener.incoming() {
-        //     if stream.is_err() {
-        //         let err = stream.err().unwrap();
-        //         error!(&self.log, "incoming connection err: {}", err);
-        //         continue;
-        //     }
-        //
-        //     let conn_engine = self.engine.clone();
-        //     let conn_log = self.log.new(o!());
-        //
-        //     self.pool.spawn(move || {
-        //         let handler = ConnectionHandler::new(conn_engine, conn_log);
-        //         handler.handle(stream.unwrap());
-        //     });
-        // }
-        //
-        // Ok(())
     }
 }

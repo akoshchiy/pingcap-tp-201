@@ -1,9 +1,10 @@
 use slog::{o, trace, Logger};
-use std::net::{SocketAddr, TcpStream};
+use std::net::{SocketAddr};
 
-use crate::kvs::net::{read, write, Command, CommandResult};
+use crate::kvs::net::{read, write, Command, CommandResult, write_async, read_async};
 use crate::kvs::{KvError, Result};
 use serde::de::DeserializeOwned;
+use tokio::net::TcpStream;
 
 pub struct KvsClient {
     log: Logger,
@@ -11,18 +12,18 @@ pub struct KvsClient {
 }
 
 impl KvsClient {
-    pub fn connect(log: &Logger, addr: SocketAddr) -> Result<KvsClient> {
-        let stream = TcpStream::connect(addr)?;
+    pub async fn connect(log: &Logger, addr: SocketAddr) -> Result<KvsClient> {
+        let stream = TcpStream::connect(addr).await?;
         Ok(KvsClient {
             log: log.new(o!()),
             stream,
         })
     }
 
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        self.write_cmd(Command::Get { key });
+    pub async fn get(&mut self, key: String) -> Result<Option<String>> {
+        self.write_cmd(Command::Get { key }).await?;
 
-        let result = self.read_result()?;
+        let result = self.read_result().await?;
 
         match result {
             CommandResult::Ok => Ok(Option::None),
@@ -31,25 +32,25 @@ impl KvsClient {
         }
     }
 
-    pub fn remove(&mut self, key: String) -> Result<()> {
-        self.write_cmd(Command::Remove { key })?;
-        let result = self.read_result()?;
+    pub async fn remove(&mut self, key: String) -> Result<()> {
+        self.write_cmd(Command::Remove { key }).await?;
+        let result = self.read_result().await?;
         parse_void_response(result)
     }
 
-    pub fn set(&mut self, key: String, val: String) -> Result<()> {
-        self.write_cmd(Command::Set { key, val })?;
-        let result = self.read_result()?;
+    pub async fn set(&mut self, key: String, val: String) -> Result<()> {
+        self.write_cmd(Command::Set { key, val }).await?;
+        let result = self.read_result().await?;
         parse_void_response(result)
     }
 
-    fn write_cmd(&mut self, cmd: Command) -> Result<()> {
+    async fn write_cmd(&mut self, cmd: Command) -> Result<()> {
         trace!(self.log, "command: {}", &cmd);
-        write(&mut self.stream, &cmd)
+        write_async(&mut self.stream, &cmd)
     }
 
-    fn read_result(&mut self) -> Result<CommandResult> {
-        let result: CommandResult = read(&mut self.stream)?;
+    async fn read_result(&mut self) -> Result<CommandResult> {
+        let result: CommandResult = read_async(&mut self.stream).await?;
         trace!(self.log, "response: {}", &result);
         Ok(result)
     }
