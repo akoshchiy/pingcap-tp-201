@@ -46,7 +46,7 @@ impl KvsClient {
 
     async fn write_cmd(&mut self, cmd: Command) -> Result<()> {
         trace!(self.log, "command: {}", &cmd);
-        write_async(&mut self.stream, &cmd)
+        write_async(&mut self.stream, &cmd).await
     }
 
     async fn read_result(&mut self) -> Result<CommandResult> {
