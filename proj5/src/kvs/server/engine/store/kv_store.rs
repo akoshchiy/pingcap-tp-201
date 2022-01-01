@@ -28,10 +28,14 @@ const DUPLICATE_COUNT_THRESHOLD: u32 = 1000;
 
 #[derive(Clone)]
 pub struct KvStore<P: ThreadPool> {
-    mem_table: Arc<SkipMap<String, TableEntry>>,
-    readers: Arc<ArrayQueue<KvStoreReader>>,
-    writer: Arc<SharedKvStoreWriter>,
+    store: Arc<SharedKvStore>,
     pool: P,
+}
+
+struct SharedKvStore {
+    mem_table: SkipMap<String, TableEntry>,
+    readers: ArrayQueue<KvStoreReader>,
+    writer: SharedKvStoreWriter,
 }
 
 struct SharedKvStoreWriter(Mutex<KvStoreWriter>);
@@ -69,13 +73,15 @@ impl<P: ThreadPool> KvStore<P> {
             readers.push(KvStoreReader {
                 root_path: path.clone(),
                 readers: RefCell::new(BTreeMap::new())
-            })
+            });
         }
 
         Ok(KvStore {
-            mem_table: Arc::new(table),
-            readers: Arc::new(readers),
-            writer: Arc::new(SharedKvStoreWriter(Mutex::new(writer))),
+            store: Arc::new(SharedKvStore {
+                mem_table: table,
+                readers,
+                writer: SharedKvStoreWriter(Mutex::new(writer))
+            }),
             pool,
         })
     }
@@ -85,13 +91,12 @@ impl<P: ThreadPool> KvsEngine for KvStore<P> {
     fn get(&self, key: String) -> BoxFuture<Result<Option<String>>> {
         let (sender, receiver) = channel::<Result<Option<String>>>();
 
-        let mem_table = self.mem_table.clone();
-        let readers = self.readers.clone();
+        let store = self.store.clone();
 
         self.pool.spawn(move || {
-            let reader = readers.pop().unwrap();
-            let result = do_get(&mem_table, &reader, key);
-            readers.push(reader);
+            let reader = store.readers.pop().unwrap();
+            let result = do_get(&store.mem_table, &reader, key);
+            store.readers.push(reader);
             sender.send(result).unwrap();
         });
 
@@ -101,14 +106,12 @@ impl<P: ThreadPool> KvsEngine for KvStore<P> {
     fn set(&self, key: String, value: String) -> BoxFuture<Result<()>> {
         let (sender, receiver) = channel::<Result<()>>();
 
-        let mem_table = self.mem_table.clone();
-        let readers = self.readers.clone();
-        let writer = self.writer.clone();
+        let store = self.store.clone();
 
         self.pool.spawn(move || {
-            let reader = readers.pop().unwrap();
-            let result = do_set(&mem_table, &reader, &writer, key, value);
-            readers.push(reader);
+            let reader = store.readers.pop().unwrap();
+            let result = do_set(&store.mem_table, &reader, &store.writer, key, value);
+            store.readers.push(reader);
             sender.send(result).unwrap();
         });
 
@@ -118,14 +121,12 @@ impl<P: ThreadPool> KvsEngine for KvStore<P> {
     fn remove(&self, key: String) -> BoxFuture<Result<()>> {
         let (sender, receiver) = channel::<Result<()>>();
 
-        let mem_table = self.mem_table.clone();
-        let readers = self.readers.clone();
-        let writer = self.writer.clone();
+        let store = self.store.clone();
 
         self.pool.spawn(move || {
-            let reader = readers.pop().unwrap();
-            let result = do_remove(&mem_table, &reader, &writer, key);
-            readers.push(reader);
+            let reader = store.readers.pop().unwrap();
+            let result = do_remove(&store.mem_table, &reader, &store.writer, key);
+            store.readers.push(reader);
             sender.send(result).unwrap();
         });
 
@@ -217,7 +218,7 @@ fn compact(
     fill_table_from(&mem_table, file_id, &mut file_reader)?;
 
     for kv in reader.readers.borrow().deref() {
-        remove_file(kv.0, &reader.root_path.root_path);
+        remove_file(kv.0, &reader.root_path);
     }
 
     let mut readers = reader.readers.borrow_mut();
