@@ -2,11 +2,11 @@ use crate::kvs::err::KvError::{KeyNotFound, Sled, SledAccess, Ut8Conversion};
 use crate::kvs::thread_pool::ThreadPool;
 use crate::kvs::Result;
 use crate::kvs::{KvError, KvsEngine};
+use futures::future::BoxFuture;
 use futures::{FutureExt, TryFutureExt};
 use sled::Db;
 use std::future::Future;
 use std::ops::Deref;
-use futures::future::BoxFuture;
 use tokio::sync::oneshot::channel;
 
 #[derive(Clone)]
@@ -87,7 +87,8 @@ impl<P: ThreadPool> KvsEngine for SledKvsEngine<P> {
                     None => Err(KeyNotFound),
                 },
                 Err(e) => Err(SledAccess { key, source: e }),
-            }.and_then(|_| flush(&db));
+            }
+            .and_then(|_| flush(&db));
 
             sender.send(res).unwrap();
         });
@@ -97,8 +98,5 @@ impl<P: ThreadPool> KvsEngine for SledKvsEngine<P> {
 }
 
 fn flush(db: &Db) -> Result<()> {
-    db
-        .flush()
-        .map(|_| ())
-        .map_err(|err| KvError::Sled(err))
+    db.flush().map(|_| ()).map_err(|err| KvError::Sled(err))
 }

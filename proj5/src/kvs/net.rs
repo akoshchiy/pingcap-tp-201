@@ -4,6 +4,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::io::{Read, Write};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "cmd")]
@@ -48,11 +49,29 @@ pub(crate) fn read<R: Read, V: DeserializeOwned>(reader: &mut R) -> Result<V> {
     bson::from_slice(&buf).map_err(|e| KvError::BsonDeserialize(e))
 }
 
+pub(crate) async fn read_async<R: AsyncReadExt + Unpin, V: DeserializeOwned>(reader: &mut R) -> Result<V> {
+    let size = reader.read_u32().await?;
+    let mut buf = vec![0; size as usize];
+    reader.read_exact(&mut buf).await?;
+    bson::from_slice(&buf).map_err(|e| KvError::BsonDeserialize(e))
+}
+
 pub(crate) fn write<W: Write, V: Serialize>(writer: &mut W, val: &V) -> Result<()> {
     let buf = bson::to_vec(val)?;
     let size = buf.len();
     writer.write_u32::<BigEndian>(size as u32);
     writer.write(&buf)?;
+    Ok(())
+}
+
+pub(crate) async fn write_async<W: AsyncWriteExt + Unpin, V: Serialize>(
+    writer: &mut W,
+    val: &V,
+) -> Result<()> {
+    let buf = bson::to_vec(val)?;
+    let size = buf.len();
+    writer.write_u32(size as u32).await?;
+    writer.write(&buf).await?;
     Ok(())
 }
 

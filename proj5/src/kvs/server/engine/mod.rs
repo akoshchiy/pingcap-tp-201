@@ -2,8 +2,8 @@ pub mod sled_eng;
 pub mod store;
 
 use crate::kvs::err::Result;
-use std::future::Future;
 use futures::future::BoxFuture;
+use std::future::Future;
 
 pub trait KvsEngine: Clone + Send + 'static {
     fn get(&self, key: String) -> BoxFuture<Result<Option<String>>>;

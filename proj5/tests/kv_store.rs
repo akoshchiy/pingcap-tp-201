@@ -1,13 +1,13 @@
+use crate::future::{BoxFuture, FutureExt};
+use futures::future::join_all;
+use futures::{future, join, TryFutureExt};
+use proj5::kvs::thread_pool::RayonThreadPool;
+use proj5::kvs::{KvError, KvStore, KvsEngine, Result};
 use std::future::Future;
 use std::pin::Pin;
-use futures::{future, join, TryFutureExt};
-use futures::future::join_all;
-use proj5::kvs::thread_pool::RayonThreadPool;
-use proj5::kvs::{KvStore, KvsEngine, KvError, Result};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 use walkdir::WalkDir;
-use crate::future::{BoxFuture, FutureExt};
 
 // Should get previously stored value
 #[test]
@@ -170,10 +170,11 @@ fn concurrent_set() -> Result<()> {
             // let store1 = store
             //     .clone();
 
-          futures.push(
-              store.set(format!("key{}", i), format!("value{}", i))
-              .map_err(|_| ())
-          );
+            futures.push(
+                store
+                    .set(format!("key{}", i), format!("value{}", i))
+                    .map_err(|_| ()),
+            );
         }
         join_all(futures).await
     });
@@ -210,15 +211,11 @@ fn concurrent_get() -> Result<()> {
         for thread_id in 0..100 {
             for i in 0..100 {
                 let key_id = (i + thread_id) % 100;
-                futures.push(
-                    store
-                        .get(format!("key{}", key_id))
-                        .map(move |res| {
-                            res.map(|val| {
-                                assert_eq!(val, Some(format!("value{}", key_id)));
-                            })
-                        })
-                );
+                futures.push(store.get(format!("key{}", key_id)).map(move |res| {
+                    res.map(|val| {
+                        assert_eq!(val, Some(format!("value{}", key_id)));
+                    })
+                }));
             }
         }
 
@@ -235,15 +232,11 @@ fn concurrent_get() -> Result<()> {
         for thread_id in 0..100 {
             for i in 0..100 {
                 let key_id = (i + thread_id) % 100;
-                futures.push(
-                    store
-                        .get(format!("key{}", key_id))
-                        .map(move |res| {
-                            res.map(|val| {
-                                assert_eq!(val, Some(format!("value{}", key_id)));
-                            })
-                        })
-                );
+                futures.push(store.get(format!("key{}", key_id)).map(move |res| {
+                    res.map(|val| {
+                        assert_eq!(val, Some(format!("value{}", key_id)));
+                    })
+                }));
             }
         }
 
@@ -255,12 +248,12 @@ fn concurrent_get() -> Result<()> {
 
 trait Wait {
     fn wait(self) -> <Self as futures::Future>::Output
-        where Self: Sized,
-              Self: futures::Future {
+    where
+        Self: Sized,
+        Self: futures::Future,
+    {
         futures::executor::block_on(self)
     }
 }
 
-impl<'a, T> Wait for BoxFuture<'a, T>
-{
-}
+impl<'a, T> Wait for BoxFuture<'a, T> {}

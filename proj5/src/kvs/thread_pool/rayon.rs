@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use crate::kvs::thread_pool::ThreadPool;
 use crate::kvs::KvError;
 use crate::kvs::Result;
 use rayon::ThreadPoolBuilder;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct RayonThreadPool {
@@ -20,7 +20,9 @@ impl ThreadPool for RayonThreadPool {
             .map_err(|err| KvError::PoolBuild {
                 msg: err.to_string(),
             })?;
-        Ok(RayonThreadPool { pool: Arc::new(pool) })
+        Ok(RayonThreadPool {
+            pool: Arc::new(pool),
+        })
     }
 
     fn spawn<F>(&self, job: F)

@@ -9,6 +9,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::str::FromStr;
 use std::{env, format};
+use tokio::runtime::{Builder, Runtime};
 
 fn main() {
     let log = init_log();
@@ -28,7 +29,9 @@ fn main() {
     let addr = parse_addr(&log, &matches);
     let engine_name = parse_engine(&log, &matches);
 
-    start_server(&log, &engine_name, dir.as_path(), addr).expect("server start failed");
+
+    start_server(&log, &engine_name, dir.as_path(), addr)
+        .expect("failed to start server");
 }
 
 fn parse_addr(log: &Logger, matches: &ArgMatches) -> SocketAddr {
@@ -47,17 +50,36 @@ fn parse_engine(log: &Logger, matches: &ArgMatches) -> String {
 
 fn start_server(root_log: &Logger, engine: &str, root_path: &Path, addr: SocketAddr) -> Result<()> {
     let log = root_log.new(o!());
-    let pool = SharedQueueThreadPool::new(10).unwrap();
     match engine {
         "kvs" => {
-            build_kvs(root_log, root_path).and_then(|e| KvsServer::new(e, pool, log).listen(addr))
+            let kvs = build_kvs(root_log, root_path)?;
+            start_with(kvs, addr, log);
         }
-        "sled" => build_sled(root_path).and_then(|e| KvsServer::new(e, pool, log).listen(addr)),
+        "sled" => {
+            let sled = build_sled(root_path)?;
+            start_with(sled, addr, log);
+
+        },
         _ => panic!("undefined engine: {}", engine),
-    }
+    };
+    Ok(())
 }
 
-fn build_sled(file_path: &Path) -> Result<SledKvsEngine<NaiveThreadPool>> {
+fn start_with<E: KvsEngine>(engine: E, addr: SocketAddr, log: Logger) {
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(num_cpus::get())
+        .build()
+        .unwrap();
+
+    let server = KvsServer::new(engine, log);
+
+    runtime.block_on(async move {
+        server.listen(addr);
+    });
+}
+
+fn build_sled(file_path: &Path) -> Result<SledKvsEngine<RayonThreadPool>> {
     if check_engine_data(file_path, "kvs") {
         panic!("kvs engine data dir detected");
     }
@@ -67,10 +89,10 @@ fn build_sled(file_path: &Path) -> Result<SledKvsEngine<NaiveThreadPool>> {
     std::fs::create_dir_all(sled_path.as_path())?;
     sled::open(sled_path.as_path())
         .map_err(|err| KvError::Sled(err))
-        .and_then(|db| SledKvsEngine::new(db, 1))
+        .and_then(|db| SledKvsEngine::new(db, num_cpus::get() as u32))
 }
 
-fn build_kvs(log: &Logger, file_path: &Path) -> Result<KvStore<NaiveThreadPool>> {
+fn build_kvs(log: &Logger, file_path: &Path) -> Result<KvStore<RayonThreadPool>> {
     if check_engine_data(file_path, "sled") {
         panic!("sled engine data dir detected");
     }
@@ -79,7 +101,7 @@ fn build_kvs(log: &Logger, file_path: &Path) -> Result<KvStore<NaiveThreadPool>>
 
     std::fs::create_dir_all(kvs_path.as_path())?;
     info!(log, "kvs path: {}", kvs_path.display().to_string());
-    KvStore::open(kvs_path.as_path(), 1)
+    KvStore::open(kvs_path.as_path(), num_cpus::get() as u32)
 }
 
 fn init_log() -> Logger {

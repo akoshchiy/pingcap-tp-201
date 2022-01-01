@@ -8,7 +8,11 @@ use crate::kvs::err::KvError::Io;
 use crate::kvs::server::engine::store::file::{extract_files, FileExtract, FileId};
 use crate::kvs::server::engine::store::io::{LogEntry, LogReader, LogWriter};
 use crate::kvs::server::engine::KvsEngine;
+use crate::kvs::thread_pool::ThreadPool;
+use crossbeam::queue::ArrayQueue;
 use crossbeam_skiplist::SkipMap;
+use futures::future::BoxFuture;
+use futures::FutureExt;
 use slog::Logger;
 use std::fs::{File, OpenOptions};
 use std::future::Future;
@@ -18,11 +22,7 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex};
-use crossbeam::queue::ArrayQueue;
-use futures::future::BoxFuture;
-use futures::FutureExt;
 use tokio::sync::oneshot::{channel, Sender};
-use crate::kvs::thread_pool::ThreadPool;
 
 const DUPLICATE_COUNT_THRESHOLD: u32 = 1000;
 
@@ -72,7 +72,7 @@ impl<P: ThreadPool> KvStore<P> {
         for _ in 0..thread_size {
             readers.push(KvStoreReader {
                 root_path: path.clone(),
-                readers: RefCell::new(BTreeMap::new())
+                readers: RefCell::new(BTreeMap::new()),
             });
         }
 
@@ -80,7 +80,7 @@ impl<P: ThreadPool> KvStore<P> {
             store: Arc::new(SharedKvStore {
                 mem_table: table,
                 readers,
-                writer: SharedKvStoreWriter(Mutex::new(writer))
+                writer: SharedKvStoreWriter(Mutex::new(writer)),
             }),
             pool,
         })
@@ -151,7 +151,7 @@ fn do_set(
     reader: &KvStoreReader,
     writer: &SharedKvStoreWriter,
     key: String,
-    value: String
+    value: String,
 ) -> Result<()> {
     let mut writer = writer.0.lock().unwrap();
 
@@ -185,7 +185,7 @@ fn do_remove(
     mem_table: &SkipMap<String, TableEntry>,
     reader: &KvStoreReader,
     writer: &SharedKvStoreWriter,
-    key: String
+    key: String,
 ) -> Result<()> {
     let mut writer = writer.0.lock().unwrap();
 
@@ -199,7 +199,7 @@ fn do_remove(
         .ok_or(KvError::KeyNotFound);
 
     if writer.duplicate_count >= DUPLICATE_COUNT_THRESHOLD {
-        compact(mem_table,reader, &mut writer)?;
+        compact(mem_table, reader, &mut writer)?;
     }
 
     res
@@ -240,7 +240,7 @@ fn compact(
 fn write_compact_file(
     mem_table: &SkipMap<String, TableEntry>,
     reader: &KvStoreReader,
-    file_id: &FileId
+    file_id: &FileId,
 ) -> Result<()> {
     let mut writer = open_writer(file_id, reader.root_path.as_path())?;
 
@@ -259,10 +259,7 @@ fn write_compact_file(
     Ok(())
 }
 
-fn read_entry(
-    reader: &KvStoreReader,
-    entry: TableEntry,
-) -> Result<Option<String>> {
+fn read_entry(reader: &KvStoreReader, entry: TableEntry) -> Result<Option<String>> {
     let mut readers = reader.readers.borrow_mut();
 
     if !readers.contains_key(&entry.file_id) {
@@ -393,9 +390,9 @@ fn remove_file(file_id: &FileId, root_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use crate::kvs::server::engine::store::kv_store::KvStore;
+    use crate::kvs::thread_pool::NaiveThreadPool;
     use crate::kvs::KvsEngine;
     use tempfile::TempDir;
-    use crate::kvs::thread_pool::NaiveThreadPool;
 
     #[test]
     fn test_get_non_existent_key() {
