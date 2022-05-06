@@ -75,7 +75,7 @@ fn start_with<E: KvsEngine>(engine: E, addr: SocketAddr, log: Logger) {
     let server = KvsServer::new(engine, log);
 
     runtime.block_on(async move {
-        server.listen(addr);
+        server.listen(addr).await;
     });
 }
 

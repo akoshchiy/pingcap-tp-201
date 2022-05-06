@@ -5,6 +5,7 @@ use crossbeam::channel::internal::SelectHandle;
 use slog::{info, Logger};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+use tokio::select;
 
 pub struct ConnectionHandler<E: KvsEngine> {
     engine: E,

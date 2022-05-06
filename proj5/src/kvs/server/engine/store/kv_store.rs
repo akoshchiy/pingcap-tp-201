@@ -394,11 +394,13 @@ mod tests {
     use crate::kvs::KvsEngine;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_get_non_existent_key() {
+    #[tokio::test]
+    async fn test_get_non_existent_key() {
         let temp_dir = TempDir::new().unwrap();
         let mut store: KvStore<NaiveThreadPool> = KvStore::open(temp_dir.into_path(), 1).unwrap();
-        let result = store.do_get("key1".to_owned()).unwrap();
+        let result = store.get("key1".to_owned())
+            .await
+            .unwrap();
         assert_eq!(result.is_none(), true);
     }
 }

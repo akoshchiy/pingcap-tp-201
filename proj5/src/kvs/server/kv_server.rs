@@ -30,7 +30,7 @@ impl<E: KvsEngine> KvsServer<E> {
 
             tokio::spawn(async move {
                 let handler = ConnectionHandler::new(conn_engine, conn_log);
-                handler.handle(stream);
+                handler.handle(stream).await;
             });
         }
     }

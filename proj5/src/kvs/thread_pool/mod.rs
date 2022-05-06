@@ -8,7 +8,7 @@ pub use self::naive::NaiveThreadPool;
 pub use self::queue::SharedQueueThreadPool;
 pub use self::rayon::RayonThreadPool;
 
-pub trait ThreadPool: Clone + Send + 'static {
+pub trait ThreadPool: Clone + Send + Sync + 'static {
     fn new(threads: u32) -> Result<Self>
     where
         Self: Sized;
