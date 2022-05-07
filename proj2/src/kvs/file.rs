@@ -194,7 +194,7 @@ mod tests {
         assert_eq!(res.is_ok(), true);
         let file_extract = res.unwrap();
 
-        assert_eq!(file_extract.append_files.len(), 0);
+        assert_eq!(file_extract.append_files.len(), 1);
         assert_eq!(file_extract.temp_files.len(), 0);
         assert_eq!(file_extract.compact_files.len(), 0);
     }
@@ -216,7 +216,7 @@ mod tests {
         let file_a_2 = File::create(file_path_a_2).unwrap();
 
         let res = extract_files(dir.path());
-        // assert_eq!(res.is_ok(), true);
+        assert_eq!(res.is_ok(), true);
 
         let file_extract = res.unwrap();
         assert_eq!(file_extract.append_files.len(), 2);
@@ -228,33 +228,11 @@ mod tests {
         assert_eq!(file_extract.append_files[1].version(), 2);
 
         assert_eq!(file_extract.compact_files.len(), 1);
-        assert_eq!(file_extract.compact_files[0].is_append(), true);
+        assert_eq!(file_extract.compact_files[0].is_compacted(), true);
         assert_eq!(file_extract.compact_files[0].version(), 1);
 
         assert_eq!(file_extract.last_version, 2);
-
-        // assert_eq!(file_extract.files[2].is_compacted(), true);
-        // assert_eq!(file_extract.files[2].version(), 1);
-        //
-        // assert_eq!(file_extract.write_file.is_compacted(), false);
-        // assert_eq!(file_extract.write_file.version(), 2);
     }
-
-    // #[test]
-    // fn test_file_id_ord() {
-    //     let mut file_ids = vec![
-    //         FileId::Append(2),
-    //         FileId::Compact(2),
-    //         FileId::Temp(2),
-    //         FileId::Temp(1),
-    //         FileId::Compact(1),
-    //         FileId::Append(1),
-    //     ];
-    //
-    //     file_ids.sort();
-    //
-    //     assert_eq!(6, file_ids.len());
-    // }
 
     #[test]
     fn test_file_id_as_key_map() {

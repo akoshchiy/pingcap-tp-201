@@ -4,6 +4,7 @@ use std::process::exit;
 
 fn main() {
     let yaml = load_yaml!("cli.yml");
+
     let app = App::from(yaml);
     let matches = app.get_matches();
 
